@@ -1,9 +1,9 @@
 # Stage 1: Build stage
 FROM python:3.13-slim AS builder
 
-# Install build dependencies
+# Install build dependencies including g++ for chroma-hnswlib
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc python3-dev && \
+    apt-get install -y --no-install-recommends gcc g++ python3-dev && \
     pip install --no-cache-dir --upgrade pip && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
