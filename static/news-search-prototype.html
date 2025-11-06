@@ -97,6 +97,51 @@
             font-size: 13px;
             color: #666;
             font-weight: 500;
+            min-width: 60px;
+        }
+
+        .mode-info-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #4a90e2;
+            color: white;
+            font-size: 11px;
+            font-weight: bold;
+            cursor: help;
+            margin-left: 4px;
+            position: relative;
+        }
+
+        .mode-info-icon:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: #333;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: normal;
+            white-space: nowrap;
+            z-index: 1000;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+
+        .mode-info-icon:hover::before {
+            content: '';
+            position: absolute;
+            bottom: calc(100% + 2px);
+            left: 50%;
+            transform: translateX(-50%);
+            border: 6px solid transparent;
+            border-top-color: #333;
+            z-index: 1000;
         }
 
         .toggle-switch {
@@ -972,10 +1017,12 @@
                     ></textarea>
                     <div class="search-actions">
                         <div class="mode-toggle" id="modeToggle">
-                            <span class="mode-toggle-label">自由對話</span>
+                            <span class="mode-toggle-label" id="modeLabel">新聞搜尋</span>
                             <div class="toggle-switch" id="toggleSwitch">
                                 <div class="toggle-slider"></div>
                             </div>
+                            <span class="mode-toggle-label">自由對話</span>
+                            <span class="mode-info-icon" data-tooltip="自由對話不會觸發搜尋行為，只會根據目前有的搜尋內容和問答回覆">?</span>
                         </div>
                         <button class="btn-search" id="btnSearch">搜尋</button>
                     </div>
