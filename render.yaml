@@ -43,7 +43,7 @@ services:
         sync: false
 
     # 健康檢查
-    healthCheckPath: /health
+    healthCheckPath: /api/health
 
     # 不需要 Persistent Disk - 使用 Neon.tech 免費 PostgreSQL
     # disk:
