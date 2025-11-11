@@ -9,7 +9,7 @@ ranking scores, and user interactions for training XGBoost ranking models.
 
 Key Features:
 - Async logging (non-blocking)
-- SQLite storage with easy PostgreSQL migration
+- Multi-database support (SQLite for local, PostgreSQL for production)
 - Privacy-conscious design
 - Captures all data needed for feature engineering
 
@@ -17,7 +17,6 @@ WARNING: This code is under development and may undergo changes in future releas
 Backwards compatibility is not guaranteed at this time.
 """
 
-import sqlite3
 import asyncio
 import json
 import time
@@ -28,6 +27,7 @@ from pathlib import Path
 import threading
 from queue import Queue
 from misc.logger.logging_config_helper import get_configured_logger
+from core.analytics_db import AnalyticsDB
 
 logger = get_configured_logger("query_logger")
 
@@ -48,12 +48,14 @@ class QueryLogger:
         Initialize the query logger.
 
         Args:
-            db_path: Path to SQLite database file
+            db_path: Path to SQLite database file (used if ANALYTICS_DATABASE_URL not set)
         """
-        self.db_path = Path(db_path)
-        print(f"[DEBUG QUERY_LOGGER] Database path: {self.db_path.absolute()}")
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        print(f"[DEBUG QUERY_LOGGER] Created directory: {self.db_path.parent.absolute()}")
+        # Initialize database abstraction layer
+        self.db = AnalyticsDB(db_path)
+
+        print(f"[DEBUG QUERY_LOGGER] Database type: {self.db.db_type}")
+        if self.db.db_type == 'sqlite':
+            print(f"[DEBUG QUERY_LOGGER] Database path: {self.db.db_path.absolute()}")
 
         # Async queue for non-blocking logging
         self.log_queue = Queue()
@@ -68,114 +70,221 @@ class QueryLogger:
         # Start async worker thread
         self._start_worker()
 
-        logger.info(f"QueryLogger initialized with database: {self.db_path}")
+        logger.info(f"QueryLogger initialized with {self.db.db_type} database")
 
     def _init_database(self):
         """Initialize database schema with all necessary tables."""
-        conn = sqlite3.connect(str(self.db_path))
+        conn = self.db.connect()
         cursor = conn.cursor()
 
-        # Table 1: Query metadata
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS queries (
-                query_id TEXT PRIMARY KEY,
-                timestamp REAL NOT NULL,
-                user_id TEXT NOT NULL,
-                session_id TEXT,
-                conversation_id TEXT,
-                query_text TEXT NOT NULL,
-                decontextualized_query TEXT,
-                site TEXT NOT NULL,
-                mode TEXT NOT NULL,
-                model TEXT,
-                latency_total_ms REAL,
-                latency_retrieval_ms REAL,
-                latency_ranking_ms REAL,
-                latency_generation_ms REAL,
-                num_results_retrieved INTEGER,
-                num_results_ranked INTEGER,
-                num_results_returned INTEGER,
-                cost_usd REAL,
-                error_occurred INTEGER DEFAULT 0,
-                error_message TEXT
-            )
-        """)
+        try:
+            # Get schema SQL based on database type (SQLite or PostgreSQL)
+            schema_dict = self._get_database_schema()
 
-        # Table 2: Retrieved documents (before ranking)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS retrieved_documents (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                query_id TEXT NOT NULL,
-                doc_url TEXT NOT NULL,
-                doc_title TEXT,
-                doc_description TEXT,
-                doc_published_date TEXT,
-                doc_author TEXT,
-                doc_source TEXT,
-                retrieval_position INTEGER NOT NULL,
-                vector_similarity_score REAL,
-                keyword_boost_score REAL,
-                bm25_score REAL,
-                temporal_boost REAL,
-                domain_match INTEGER,
-                final_retrieval_score REAL,
-                FOREIGN KEY (query_id) REFERENCES queries(query_id)
-            )
-        """)
+            # Create tables
+            for table_name, create_sql in schema_dict.items():
+                cursor.execute(create_sql)
 
-        # Table 3: Ranking scores (after ranking)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS ranking_scores (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                query_id TEXT NOT NULL,
-                doc_url TEXT NOT NULL,
-                ranking_position INTEGER NOT NULL,
-                llm_relevance_score REAL,
-                llm_keyword_score REAL,
-                llm_semantic_score REAL,
-                llm_freshness_score REAL,
-                llm_authority_score REAL,
-                llm_final_score REAL,
-                llm_snippet TEXT,
-                xgboost_score REAL,
-                xgboost_confidence REAL,
-                mmr_diversity_score REAL,
-                final_ranking_score REAL,
-                ranking_method TEXT,
-                FOREIGN KEY (query_id) REFERENCES queries(query_id)
-            )
-        """)
+            # Create indexes
+            index_sqls = self._get_database_indexes()
+            for index_sql in index_sqls:
+                cursor.execute(index_sql)
 
-        # Table 4: User interactions (clicks, dwell time)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS user_interactions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                query_id TEXT NOT NULL,
-                doc_url TEXT NOT NULL,
-                interaction_type TEXT NOT NULL,
-                interaction_timestamp REAL NOT NULL,
-                result_position INTEGER,
-                dwell_time_ms REAL,
-                scroll_depth_percent REAL,
-                clicked INTEGER DEFAULT 0,
-                client_user_agent TEXT,
-                client_ip_hash TEXT,
-                FOREIGN KEY (query_id) REFERENCES queries(query_id)
-            )
-        """)
+            conn.commit()
+            logger.info(f"Database schema initialized successfully ({self.db.db_type})")
 
-        # Create indexes for fast lookups
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_queries_timestamp ON queries(timestamp)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_queries_user_id ON queries(user_id)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_retrieved_docs_query ON retrieved_documents(query_id)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_ranking_scores_query ON ranking_scores(query_id)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_interactions_query ON user_interactions(query_id)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_interactions_url ON user_interactions(doc_url)")
+        finally:
+            conn.close()
 
-        conn.commit()
-        conn.close()
+    def _get_database_schema(self) -> Dict[str, str]:
+        """Get database schema SQL for current database type."""
+        if self.db.db_type == 'postgres':
+            return self._get_postgres_schema()
+        else:
+            return self._get_sqlite_schema()
 
-        logger.info("Database schema initialized successfully")
+    def _get_sqlite_schema(self) -> Dict[str, str]:
+        """Get SQLite schema."""
+        return {
+            'queries': """
+                CREATE TABLE IF NOT EXISTS queries (
+                    query_id TEXT PRIMARY KEY,
+                    timestamp REAL NOT NULL,
+                    user_id TEXT NOT NULL,
+                    session_id TEXT,
+                    conversation_id TEXT,
+                    query_text TEXT NOT NULL,
+                    decontextualized_query TEXT,
+                    site TEXT NOT NULL,
+                    mode TEXT NOT NULL,
+                    model TEXT,
+                    latency_total_ms REAL,
+                    latency_retrieval_ms REAL,
+                    latency_ranking_ms REAL,
+                    latency_generation_ms REAL,
+                    num_results_retrieved INTEGER,
+                    num_results_ranked INTEGER,
+                    num_results_returned INTEGER,
+                    cost_usd REAL,
+                    error_occurred INTEGER DEFAULT 0,
+                    error_message TEXT
+                )
+            """,
+            'retrieved_documents': """
+                CREATE TABLE IF NOT EXISTS retrieved_documents (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    query_id TEXT NOT NULL,
+                    doc_url TEXT NOT NULL,
+                    doc_title TEXT,
+                    doc_description TEXT,
+                    doc_published_date TEXT,
+                    doc_author TEXT,
+                    doc_source TEXT,
+                    retrieval_position INTEGER NOT NULL,
+                    vector_similarity_score REAL,
+                    keyword_boost_score REAL,
+                    bm25_score REAL,
+                    temporal_boost REAL,
+                    domain_match INTEGER,
+                    final_retrieval_score REAL,
+                    FOREIGN KEY (query_id) REFERENCES queries(query_id)
+                )
+            """,
+            'ranking_scores': """
+                CREATE TABLE IF NOT EXISTS ranking_scores (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    query_id TEXT NOT NULL,
+                    doc_url TEXT NOT NULL,
+                    ranking_position INTEGER NOT NULL,
+                    llm_relevance_score REAL,
+                    llm_keyword_score REAL,
+                    llm_semantic_score REAL,
+                    llm_freshness_score REAL,
+                    llm_authority_score REAL,
+                    llm_final_score REAL,
+                    llm_snippet TEXT,
+                    xgboost_score REAL,
+                    xgboost_confidence REAL,
+                    mmr_diversity_score REAL,
+                    final_ranking_score REAL,
+                    ranking_method TEXT,
+                    FOREIGN KEY (query_id) REFERENCES queries(query_id)
+                )
+            """,
+            'user_interactions': """
+                CREATE TABLE IF NOT EXISTS user_interactions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    query_id TEXT NOT NULL,
+                    doc_url TEXT NOT NULL,
+                    interaction_type TEXT NOT NULL,
+                    interaction_timestamp REAL NOT NULL,
+                    result_position INTEGER,
+                    dwell_time_ms REAL,
+                    scroll_depth_percent REAL,
+                    clicked INTEGER DEFAULT 0,
+                    client_user_agent TEXT,
+                    client_ip_hash TEXT,
+                    FOREIGN KEY (query_id) REFERENCES queries(query_id)
+                )
+            """
+        }
+
+    def _get_postgres_schema(self) -> Dict[str, str]:
+        """Get PostgreSQL schema."""
+        return {
+            'queries': """
+                CREATE TABLE IF NOT EXISTS queries (
+                    query_id VARCHAR(255) PRIMARY KEY,
+                    timestamp DOUBLE PRECISION NOT NULL,
+                    user_id VARCHAR(255) NOT NULL,
+                    session_id VARCHAR(255),
+                    conversation_id VARCHAR(255),
+                    query_text TEXT NOT NULL,
+                    decontextualized_query TEXT,
+                    site VARCHAR(100) NOT NULL,
+                    mode VARCHAR(50) NOT NULL,
+                    model VARCHAR(100),
+                    latency_total_ms DOUBLE PRECISION,
+                    latency_retrieval_ms DOUBLE PRECISION,
+                    latency_ranking_ms DOUBLE PRECISION,
+                    latency_generation_ms DOUBLE PRECISION,
+                    num_results_retrieved INTEGER,
+                    num_results_ranked INTEGER,
+                    num_results_returned INTEGER,
+                    cost_usd DOUBLE PRECISION,
+                    error_occurred INTEGER DEFAULT 0,
+                    error_message TEXT
+                )
+            """,
+            'retrieved_documents': """
+                CREATE TABLE IF NOT EXISTS retrieved_documents (
+                    id SERIAL PRIMARY KEY,
+                    query_id VARCHAR(255) NOT NULL,
+                    doc_url TEXT NOT NULL,
+                    doc_title TEXT,
+                    doc_description TEXT,
+                    doc_published_date VARCHAR(50),
+                    doc_author VARCHAR(255),
+                    doc_source VARCHAR(255),
+                    retrieval_position INTEGER NOT NULL,
+                    vector_similarity_score DOUBLE PRECISION,
+                    keyword_boost_score DOUBLE PRECISION,
+                    bm25_score DOUBLE PRECISION,
+                    temporal_boost DOUBLE PRECISION,
+                    domain_match INTEGER,
+                    final_retrieval_score DOUBLE PRECISION,
+                    FOREIGN KEY (query_id) REFERENCES queries(query_id)
+                )
+            """,
+            'ranking_scores': """
+                CREATE TABLE IF NOT EXISTS ranking_scores (
+                    id SERIAL PRIMARY KEY,
+                    query_id VARCHAR(255) NOT NULL,
+                    doc_url TEXT NOT NULL,
+                    ranking_position INTEGER NOT NULL,
+                    llm_relevance_score DOUBLE PRECISION,
+                    llm_keyword_score DOUBLE PRECISION,
+                    llm_semantic_score DOUBLE PRECISION,
+                    llm_freshness_score DOUBLE PRECISION,
+                    llm_authority_score DOUBLE PRECISION,
+                    llm_final_score DOUBLE PRECISION,
+                    llm_snippet TEXT,
+                    xgboost_score DOUBLE PRECISION,
+                    xgboost_confidence DOUBLE PRECISION,
+                    mmr_diversity_score DOUBLE PRECISION,
+                    final_ranking_score DOUBLE PRECISION,
+                    ranking_method VARCHAR(50),
+                    FOREIGN KEY (query_id) REFERENCES queries(query_id)
+                )
+            """,
+            'user_interactions': """
+                CREATE TABLE IF NOT EXISTS user_interactions (
+                    id SERIAL PRIMARY KEY,
+                    query_id VARCHAR(255) NOT NULL,
+                    doc_url TEXT NOT NULL,
+                    interaction_type VARCHAR(50) NOT NULL,
+                    interaction_timestamp DOUBLE PRECISION NOT NULL,
+                    result_position INTEGER,
+                    dwell_time_ms DOUBLE PRECISION,
+                    scroll_depth_percent DOUBLE PRECISION,
+                    clicked INTEGER DEFAULT 0,
+                    client_user_agent TEXT,
+                    client_ip_hash VARCHAR(255),
+                    FOREIGN KEY (query_id) REFERENCES queries(query_id)
+                )
+            """
+        }
+
+    def _get_database_indexes(self) -> List[str]:
+        """Get database index SQL."""
+        return [
+            "CREATE INDEX IF NOT EXISTS idx_queries_timestamp ON queries(timestamp)",
+            "CREATE INDEX IF NOT EXISTS idx_queries_user_id ON queries(user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_retrieved_docs_query ON retrieved_documents(query_id)",
+            "CREATE INDEX IF NOT EXISTS idx_ranking_scores_query ON ranking_scores(query_id)",
+            "CREATE INDEX IF NOT EXISTS idx_interactions_query ON user_interactions(query_id)",
+            "CREATE INDEX IF NOT EXISTS idx_interactions_url ON user_interactions(doc_url)"
+        ]
 
     def _start_worker(self):
         """Start background worker thread for async logging."""
@@ -208,12 +317,14 @@ class QueryLogger:
     def _write_to_db(self, table_name: str, data: Dict[str, Any]):
         """Write data to database (synchronous, called by worker thread)."""
         try:
-            conn = sqlite3.connect(str(self.db_path))
+            conn = self.db.connect()
             cursor = conn.cursor()
 
             # Build INSERT statement dynamically
             columns = ", ".join(data.keys())
-            placeholders = ", ".join(["?" for _ in data])
+            # Use appropriate placeholder for database type
+            placeholder = "%s" if self.db.db_type == 'postgres' else "?"
+            placeholders = ", ".join([placeholder for _ in data])
             query = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
 
             cursor.execute(query, list(data.values()))
@@ -294,23 +405,28 @@ class QueryLogger:
             error_message: Error message if any
         """
         try:
-            conn = sqlite3.connect(str(self.db_path))
+            conn = self.db.connect()
             cursor = conn.cursor()
 
-            cursor.execute("""
+            # Use appropriate placeholder for database type
+            placeholder = "%s" if self.db.db_type == 'postgres' else "?"
+
+            query_sql = f"""
                 UPDATE queries SET
-                    latency_total_ms = ?,
-                    latency_retrieval_ms = ?,
-                    latency_ranking_ms = ?,
-                    latency_generation_ms = ?,
-                    num_results_retrieved = ?,
-                    num_results_ranked = ?,
-                    num_results_returned = ?,
-                    cost_usd = ?,
-                    error_occurred = ?,
-                    error_message = ?
-                WHERE query_id = ?
-            """, (
+                    latency_total_ms = {placeholder},
+                    latency_retrieval_ms = {placeholder},
+                    latency_ranking_ms = {placeholder},
+                    latency_generation_ms = {placeholder},
+                    num_results_retrieved = {placeholder},
+                    num_results_ranked = {placeholder},
+                    num_results_returned = {placeholder},
+                    cost_usd = {placeholder},
+                    error_occurred = {placeholder},
+                    error_message = {placeholder}
+                WHERE query_id = {placeholder}
+            """
+
+            cursor.execute(query_sql, (
                 latency_total_ms,
                 latency_retrieval_ms,
                 latency_ranking_ms,
@@ -494,45 +610,53 @@ class QueryLogger:
             Dictionary with statistics
         """
         try:
-            conn = sqlite3.connect(str(self.db_path))
+            conn = self.db.connect()
             cursor = conn.cursor()
 
             cutoff_timestamp = time.time() - (days * 24 * 60 * 60)
 
+            # Use appropriate placeholder for database type
+            placeholder = "%s" if self.db.db_type == 'postgres' else "?"
+
             # Total queries
-            cursor.execute("""
-                SELECT COUNT(*) FROM queries WHERE timestamp > ?
+            cursor.execute(f"""
+                SELECT COUNT(*) FROM queries WHERE timestamp > {placeholder}
             """, (cutoff_timestamp,))
-            total_queries = cursor.fetchone()[0]
+            result = cursor.fetchone()
+            total_queries = result[0] if isinstance(result, tuple) else result['count']
 
             # Average latency
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT AVG(latency_total_ms) FROM queries
-                WHERE timestamp > ? AND latency_total_ms IS NOT NULL
+                WHERE timestamp > {placeholder} AND latency_total_ms IS NOT NULL
             """, (cutoff_timestamp,))
-            avg_latency = cursor.fetchone()[0] or 0
+            result = cursor.fetchone()
+            avg_latency = (result[0] if isinstance(result, tuple) else result['avg']) or 0
 
             # Total cost
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT SUM(cost_usd) FROM queries
-                WHERE timestamp > ? AND cost_usd IS NOT NULL
+                WHERE timestamp > {placeholder} AND cost_usd IS NOT NULL
             """, (cutoff_timestamp,))
-            total_cost = cursor.fetchone()[0] or 0
+            result = cursor.fetchone()
+            total_cost = (result[0] if isinstance(result, tuple) else result['sum']) or 0
 
             # Error rate
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT COUNT(*) FROM queries
-                WHERE timestamp > ? AND error_occurred = 1
+                WHERE timestamp > {placeholder} AND error_occurred = 1
             """, (cutoff_timestamp,))
-            error_count = cursor.fetchone()[0]
+            result = cursor.fetchone()
+            error_count = result[0] if isinstance(result, tuple) else result['count']
             error_rate = error_count / total_queries if total_queries > 0 else 0
 
             # Click-through rate
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT COUNT(DISTINCT query_id) FROM user_interactions
-                WHERE interaction_timestamp > ? AND clicked = 1
+                WHERE interaction_timestamp > {placeholder} AND clicked = 1
             """, (cutoff_timestamp,))
-            queries_with_clicks = cursor.fetchone()[0]
+            result = cursor.fetchone()
+            queries_with_clicks = result[0] if isinstance(result, tuple) else result['count']
             ctr = queries_with_clicks / total_queries if total_queries > 0 else 0
 
             conn.close()

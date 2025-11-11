@@ -7,11 +7,12 @@ Analytics API Handler for NLWeb
 Provides REST API endpoints for the analytics dashboard to query
 training data and usage statistics.
 
+Supports both SQLite (local) and PostgreSQL (production).
+
 WARNING: This code is under development and may undergo changes in future releases.
 Backwards compatibility is not guaranteed at this time.
 """
 
-import sqlite3
 import json
 import csv
 import io
@@ -19,6 +20,7 @@ from aiohttp import web
 from pathlib import Path
 import time
 from misc.logger.logging_config_helper import get_configured_logger
+from core.analytics_db import AnalyticsDB
 
 logger = get_configured_logger("analytics_handler")
 
@@ -33,16 +35,18 @@ class AnalyticsHandler:
         Initialize the analytics handler.
 
         Args:
-            db_path: Path to SQLite database
+            db_path: Path to SQLite database (used if ANALYTICS_DATABASE_URL not set)
         """
-        self.db_path = Path(db_path)
+        self.db = AnalyticsDB(db_path)
+        logger.info(f"Analytics handler initialized with {self.db.db_type} database")
 
-        if not self.db_path.exists():
-            logger.warning(f"Analytics database not found at {self.db_path}")
-
-    def _get_connection(self) -> sqlite3.Connection:
+    def _get_connection(self):
         """Get database connection."""
-        return sqlite3.connect(str(self.db_path))
+        return self.db.connect()
+
+    def _get_placeholder(self) -> str:
+        """Get SQL placeholder for current database type."""
+        return "%s" if self.db.db_type == 'postgres' else "?"
 
     async def get_stats(self, request: web.Request) -> web.Response:
         """
@@ -57,10 +61,11 @@ class AnalyticsHandler:
 
             conn = self._get_connection()
             cursor = conn.cursor()
+            ph = self._get_placeholder()  # SQL placeholder (? or %s)
 
             # Total queries
-            cursor.execute("""
-                SELECT COUNT(*) FROM queries WHERE timestamp > ?
+            cursor.execute(f"""
+                SELECT COUNT(*) FROM queries WHERE timestamp > {ph}
             """, (cutoff_timestamp,))
             total_queries = cursor.fetchone()[0]
 
@@ -68,16 +73,16 @@ class AnalyticsHandler:
             queries_per_day = total_queries / days if days > 0 else 0
 
             # Average latency
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT AVG(latency_total_ms) FROM queries
-                WHERE timestamp > ? AND latency_total_ms IS NOT NULL
+                WHERE timestamp > {ph} AND latency_total_ms IS NOT NULL
             """, (cutoff_timestamp,))
             avg_latency = cursor.fetchone()[0] or 0
 
             # Total cost
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT SUM(cost_usd) FROM queries
-                WHERE timestamp > ? AND cost_usd IS NOT NULL
+                WHERE timestamp > {ph} AND cost_usd IS NOT NULL
             """, (cutoff_timestamp,))
             total_cost = cursor.fetchone()[0] or 0
 
@@ -85,27 +90,27 @@ class AnalyticsHandler:
             cost_per_query = total_cost / total_queries if total_queries > 0 else 0
 
             # Error rate
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT COUNT(*) FROM queries
-                WHERE timestamp > ? AND error_occurred = 1
+                WHERE timestamp > {ph} AND error_occurred = 1
             """, (cutoff_timestamp,))
             error_count = cursor.fetchone()[0]
             error_rate = error_count / total_queries if total_queries > 0 else 0
 
             # Click-through rate
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT COUNT(DISTINCT query_id) FROM user_interactions
-                WHERE interaction_timestamp > ? AND clicked = 1
+                WHERE interaction_timestamp > {ph} AND clicked = 1
             """, (cutoff_timestamp,))
             queries_with_clicks = cursor.fetchone()[0]
             ctr = queries_with_clicks / total_queries if total_queries > 0 else 0
 
             # Training samples (query-document pairs from raw logs)
             # Phase 1: Count from retrieved_documents instead of feature_vectors
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT COUNT(*) FROM retrieved_documents
                 WHERE query_id IN (
-                    SELECT query_id FROM queries WHERE timestamp > ?
+                    SELECT query_id FROM queries WHERE timestamp > {ph}
                 )
             """, (cutoff_timestamp,))
             training_samples = cursor.fetchone()[0]
@@ -148,9 +153,10 @@ class AnalyticsHandler:
 
             conn = self._get_connection()
             cursor = conn.cursor()
+            ph = self._get_placeholder()
 
             # Get queries with CTR
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT
                     q.query_id,
                     q.query_text,
@@ -163,9 +169,9 @@ class AnalyticsHandler:
                     (SELECT COUNT(*) FROM user_interactions
                      WHERE query_id = q.query_id AND clicked = 1) as clicks
                 FROM queries q
-                WHERE q.timestamp > ?
+                WHERE q.timestamp > {ph}
                 ORDER BY q.timestamp DESC
-                LIMIT ?
+                LIMIT {ph}
             """, (cutoff_timestamp, limit))
 
             rows = cursor.fetchall()
@@ -214,9 +220,10 @@ class AnalyticsHandler:
 
             conn = self._get_connection()
             cursor = conn.cursor()
+            ph = self._get_placeholder()
 
             # Get most clicked URLs with average position and dwell time
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT
                     ui.doc_url,
                     rd.doc_title,
@@ -226,10 +233,10 @@ class AnalyticsHandler:
                 FROM user_interactions ui
                 LEFT JOIN retrieved_documents rd ON ui.doc_url = rd.doc_url
                 WHERE ui.clicked = 1
-                  AND ui.interaction_timestamp > ?
+                  AND ui.interaction_timestamp > {ph}
                 GROUP BY ui.doc_url
                 ORDER BY click_count DESC
-                LIMIT ?
+                LIMIT {ph}
             """, (cutoff_timestamp, limit))
 
             rows = cursor.fetchall()
@@ -272,16 +279,22 @@ class AnalyticsHandler:
 
             conn = self._get_connection()
             cursor = conn.cursor()
+            ph = self._get_placeholder()
 
-            # Debug: check database path and tables
-            logger.info(f"Export: Using database at {self.db_path}")
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            # Debug: check database type and tables
+            logger.info(f"Export: Using {self.db.db_type} database")
+
+            # Get table names (different SQL for SQLite vs PostgreSQL)
+            if self.db.db_type == 'postgres':
+                cursor.execute("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
+            else:
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
             tables = [row[0] for row in cursor.fetchall()]
             logger.info(f"Export: Available tables: {tables}")
 
             # Export raw logs for ML training
             logger.info(f"Exporting raw logs from last {days} days")
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT
                     q.query_id,
                     q.query_text,
@@ -301,7 +314,7 @@ class AnalyticsHandler:
                 LEFT JOIN retrieved_documents rd ON q.query_id = rd.query_id
                 LEFT JOIN ranking_scores rs ON q.query_id = rs.query_id AND rd.doc_url = rs.doc_url
                 LEFT JOIN user_interactions ui ON q.query_id = ui.query_id AND rd.doc_url = ui.doc_url
-                WHERE q.timestamp > ? AND rd.doc_url IS NOT NULL
+                WHERE q.timestamp > {ph} AND rd.doc_url IS NOT NULL
                 ORDER BY q.timestamp DESC, rd.retrieval_position ASC
             """, (cutoff_timestamp,))
 

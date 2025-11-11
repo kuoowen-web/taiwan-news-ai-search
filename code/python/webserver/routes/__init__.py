@@ -28,9 +28,11 @@ def setup_routes(app):
     setup_oauth_routes(app)
 
     # Register analytics routes with correct database path
-    # Database is in code/python/data/analytics/ because that's where the server runs from
+    # Use environment variable if available (for Render persistent disk), otherwise use default
+    import os
+    analytics_db_path = os.environ.get('ANALYTICS_DB_PATH', 'data/analytics/query_logs.db')
     try:
-        register_analytics_routes(app, db_path="data/analytics/query_logs.db")
+        register_analytics_routes(app, db_path=analytics_db_path)
     except Exception as e:
         import logging
         logger = logging.getLogger(__name__)
