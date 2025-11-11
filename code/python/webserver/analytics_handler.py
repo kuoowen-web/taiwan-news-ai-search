@@ -178,8 +178,24 @@ class AnalyticsHandler:
             queries = []
 
             for row in rows:
-                query_id, query_text, timestamp, site, mode, latency, num_results, cost, clicks = row
-                ctr = clicks / num_results if num_results > 0 else None
+                # Handle both dict (PostgreSQL) and tuple (SQLite) row formats
+                if isinstance(row, dict):
+                    query_id = row['query_id']
+                    query_text = row['query_text']
+                    timestamp = row['timestamp']
+                    site = row['site']
+                    mode = row['mode']
+                    latency = row['latency_total_ms']
+                    num_results = row['num_results_returned']
+                    cost = row['cost_usd']
+                    clicks = row['clicks']
+                else:
+                    query_id, query_text, timestamp, site, mode, latency, num_results, cost, clicks = row
+
+                # Safely calculate CTR, handle None values
+                num_results = int(num_results) if num_results is not None else 0
+                clicks = int(clicks) if clicks is not None else 0
+                ctr = clicks / num_results if num_results > 0 else 0
 
                 queries.append({
                     "query_id": query_id,
