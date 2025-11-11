@@ -316,22 +316,37 @@ class QueryLogger:
 
     def _write_to_db(self, table_name: str, data: Dict[str, Any]):
         """Write data to database (synchronous, called by worker thread)."""
-        try:
-            conn = self.db.connect()
-            cursor = conn.cursor()
+        max_retries = 3
+        retry_delay = 0.5  # seconds
 
-            # Build INSERT statement dynamically
-            columns = ", ".join(data.keys())
-            # Use appropriate placeholder for database type
-            placeholder = "%s" if self.db.db_type == 'postgres' else "?"
-            placeholders = ", ".join([placeholder for _ in data])
-            query = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
+        for attempt in range(max_retries):
+            try:
+                conn = self.db.connect()
+                cursor = conn.cursor()
 
-            cursor.execute(query, list(data.values()))
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            logger.error(f"Error writing to database table {table_name}: {e}")
+                # Build INSERT statement dynamically
+                columns = ", ".join(data.keys())
+                # Use appropriate placeholder for database type
+                placeholder = "%s" if self.db.db_type == 'postgres' else "?"
+                placeholders = ", ".join([placeholder for _ in data])
+                query = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
+
+                cursor.execute(query, list(data.values()))
+                conn.commit()
+                conn.close()
+                return  # Success, exit retry loop
+
+            except Exception as e:
+                error_msg = str(e)
+                # Check if it's a foreign key error
+                if "foreign key constraint" in error_msg.lower() and attempt < max_retries - 1:
+                    # Wait and retry (parent record might not be inserted yet)
+                    time.sleep(retry_delay)
+                    logger.warning(f"Foreign key constraint error on {table_name}, retrying ({attempt + 1}/{max_retries})...")
+                else:
+                    # Log error but don't crash
+                    logger.error(f"Error writing to database table {table_name}: {e}")
+                    return
 
     def log_query_start(
         self,
