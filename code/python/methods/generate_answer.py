@@ -50,11 +50,10 @@ class GenerateAnswer(NLWebHandler):
             logger.info(f"Starting query execution for conversation_id: {self.conversation_id}")
 
             # Analytics: Generate unique query ID and log query start (same as NLWebHandler)
-            import uuid
             import time
             from core.query_logger import get_query_logger
 
-            self.query_id = f"query_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
+            self.query_id = f"query_{int(time.time() * 1000)}"
             print(f"[DEBUG GenerateAnswer] Generated query_id: {self.query_id}")
             query_logger = get_query_logger()
             query_start_time = time.time()
