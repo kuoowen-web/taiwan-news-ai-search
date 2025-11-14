@@ -520,6 +520,17 @@ class AnalyticsHandler:
                         # Log display event
                         pass
 
+                    elif event_type == 'result_clicked':
+                        query_logger.log_user_interaction(
+                            query_id=data.get('query_id'),
+                            doc_url=data.get('doc_url'),
+                            interaction_type='click',
+                            result_position=data.get('result_position', 0),
+                            clicked=True,
+                            client_user_agent=data.get('client_user_agent', ''),
+                            client_ip_hash=self._hash_ip(request)
+                        )
+
                     elif event_type == 'dwell_time':
                         query_logger.log_user_interaction(
                             query_id=data.get('query_id'),
