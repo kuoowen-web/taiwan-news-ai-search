@@ -516,34 +516,15 @@ class AnalyticsHandler:
                 data = event.get('data', {})
 
                 try:
-                    if event_type == 'query_start':
-                        # Already handled by backend
-                        pass
-
-                    elif event_type == 'result_displayed':
+                    if event_type == 'result_displayed':
                         # Log display event
                         pass
 
-                    elif event_type == 'result_clicked':
-                        # Log user click
-                        print(f"[DEBUG BATCH] Click event: query_id={data.get('query_id')}, doc_url={data.get('doc_url')}")
-                        query_logger.log_user_interaction(
-                            query_id=data.get('query_id'),
-                            doc_url=data.get('doc_url'),
-                            interaction_type='click',
-                            result_position=data.get('result_position', 0),
-                            clicked=True,
-                            client_user_agent=data.get('client_user_agent', ''),
-                            client_ip_hash=self._hash_ip(request)
-                        )
-
                     elif event_type == 'dwell_time':
-                        # Log dwell time
                         query_logger.log_user_interaction(
                             query_id=data.get('query_id'),
                             doc_url=data.get('doc_url'),
                             interaction_type='dwell',
-                            result_position=data.get('result_position', 0),
                             dwell_time_ms=data.get('dwell_time_ms', 0),
                             scroll_depth_percent=data.get('scroll_depth_percent', 0)
                         )
