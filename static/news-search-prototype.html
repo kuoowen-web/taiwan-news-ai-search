@@ -1200,8 +1200,8 @@
         const analyticsTracker = new AnalyticsTrackerSSE('/api/analytics/event');
         let currentAnalyticsQueryId = null;
 
-        // Event delegation: Track all clicks on article links
-        document.addEventListener('click', (event) => {
+        // Event delegation: Track all clicks on article links (left, middle, right)
+        const handleLinkClick = (event) => {
             const link = event.target.closest('.btn-read-more, a[href]');
             if (!link) return;
 
@@ -1215,7 +1215,12 @@
             if (currentAnalyticsQueryId && url) {
                 analyticsTracker.trackClick(url, position);
             }
-        });
+        };
+
+        // Listen for all types of clicks
+        document.addEventListener('click', handleLinkClick);        // Left click
+        document.addEventListener('auxclick', handleLinkClick);     // Middle click
+        document.addEventListener('contextmenu', handleLinkClick);  // Right click
 
         // MutationObserver: Auto-track article displays
         const articleObserver = new MutationObserver((mutations) => {
