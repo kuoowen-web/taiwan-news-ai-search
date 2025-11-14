@@ -107,14 +107,15 @@ class MessageSender:
         """Send begin-nlweb-response message at the start of query processing."""
         if not (self.handler.streaming and self.handler.http_handler is not None):
             return
-            
+
         begin_message = {
             "message_type": "begin-nlweb-response",
             "conversation_id": self.handler.conversation_id,
             "query": self.handler.query,
+            "query_id": getattr(self.handler, 'query_id', None),  # Include query_id for analytics
             "timestamp": int(time.time() * 1000)
         }
-        
+
         try:
             await self.handler.http_handler.write_stream(begin_message)
         except Exception:

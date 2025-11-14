@@ -1434,6 +1434,15 @@
 
                         // Handle different message types
                         switch(data.message_type) {
+                            case 'begin-nlweb-response':
+                                // Query started - capture query_id for analytics
+                                if (data.query_id) {
+                                    currentAnalyticsQueryId = data.query_id;
+                                    analyticsTracker.startQuery(currentAnalyticsQueryId, data.query);
+                                    console.log('[Analytics] Using backend query_id:', currentAnalyticsQueryId);
+                                }
+                                break;
+
                             case 'remember':
                                 // Memory request detected!
                                 if (data.item_to_remember) {
@@ -1702,10 +1711,8 @@
             const query = searchInput.value.trim();
             if (!query) return;
 
-            // Analytics: Start tracking query
-            currentAnalyticsQueryId = `query_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-            analyticsTracker.startQuery(currentAnalyticsQueryId, query);
-            console.log('[Analytics] Tracking query:', currentAnalyticsQueryId);
+            // Note: Analytics will be initialized when we receive 'begin-nlweb-response' from backend
+            // with the server-generated query_id
 
             // Hide initial state
             initialState.style.display = 'none';
@@ -1830,9 +1837,8 @@
             // Add user message to chat
             addChatMessage('user', query);
 
-            // Analytics: Track chat query
-            currentAnalyticsQueryId = `chat_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-            analyticsTracker.startQuery(currentAnalyticsQueryId, query);
+            // Note: Analytics will be initialized when we receive 'begin-nlweb-response' from backend
+            // with the server-generated query_id
 
             // Clear input
             searchInput.value = '';
