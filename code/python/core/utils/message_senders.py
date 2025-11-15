@@ -105,10 +105,7 @@ class MessageSender:
     
     async def send_begin_response(self):
         """Send begin-nlweb-response message at the start of query processing."""
-        print(f"[DEBUG send_begin_response] streaming={self.handler.streaming}, http_handler={self.handler.http_handler is not None}")
-
         if not (self.handler.streaming and self.handler.http_handler is not None):
-            print(f"[DEBUG send_begin_response] BLOCKED: Early return due to condition check")
             return
 
         begin_message = {
@@ -119,12 +116,9 @@ class MessageSender:
             "timestamp": int(time.time() * 1000)
         }
 
-        print(f"[DEBUG send_begin_response] Sending message: {begin_message}")
         try:
             await self.handler.http_handler.write_stream(begin_message)
-            print(f"[DEBUG send_begin_response] Message sent successfully")
         except Exception as e:
-            print(f"[DEBUG send_begin_response] Exception during send: {e}")
             pass
     
     async def send_end_response(self, error=False):

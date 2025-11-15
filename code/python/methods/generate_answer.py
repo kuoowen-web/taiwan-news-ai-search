@@ -186,7 +186,6 @@ class GenerateAnswer(NLWebHandler):
         from core.query_logger import get_query_logger
 
         self.query_id = f"query_{int(time.time() * 1000)}"
-        print(f"[DEBUG GenerateAnswer] Generated query_id: {self.query_id}")
         query_logger = get_query_logger()
 
         try:
@@ -201,16 +200,13 @@ class GenerateAnswer(NLWebHandler):
                 model=self.model,
                 parent_query_id=self.parent_query_id
             )
-            print(f"[DEBUG GenerateAnswer] Successfully logged query start")
         except Exception as e:
-            print(f"[DEBUG GenerateAnswer] Failed to log query start: {e}")
             logger.warning(f"Failed to log query start: {e}")
 
         # Send begin-nlweb-response message for analytics
         try:
             await self.message_sender.send_begin_response()
         except Exception as e:
-            print(f"[DEBUG GenerateAnswer] Failed to send begin response: {e}")
             logger.warning(f"Failed to send begin response: {e}")
 
         # Check if we should reuse cached results from list mode

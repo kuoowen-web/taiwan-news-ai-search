@@ -849,12 +849,7 @@ class QdrantVectorClient(RetrievalClientBase):
 
                 # Analytics: Log retrieved documents with scores
                 handler = kwargs.get('handler')
-                print(f"[DEBUG QDRANT] handler: {handler}")
-                print(f"[DEBUG QDRANT] handler has query_id: {hasattr(handler, 'query_id') if handler else False}")
-                if handler:
-                    print(f"[DEBUG QDRANT] handler.query_id: {getattr(handler, 'query_id', 'NOT SET')}")
                 if handler and hasattr(handler, 'query_id'):
-                    print(f"[DEBUG QDRANT] About to log {len(results)} retrieved documents")
                     query_logger = get_query_logger()
                     try:
                         # Map scores back to results by URL
@@ -918,11 +913,7 @@ class QdrantVectorClient(RetrievalClientBase):
                                 )
 
                         logger.info(f"Analytics: Logged {len(results)} retrieved documents for query {handler.query_id}")
-                        print(f"[DEBUG QDRANT] Successfully logged {len(results)} retrieved documents")
                     except Exception as e:
-                        print(f"[DEBUG QDRANT] EXCEPTION while logging: {e}")
-                        import traceback
-                        traceback.print_exc()
                         logger.warning(f"Failed to log retrieved documents: {e}")
 
             retrieve_time = time.time() - start_retrieve

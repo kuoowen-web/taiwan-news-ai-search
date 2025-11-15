@@ -53,19 +53,13 @@ class QueryLogger:
         # Initialize database abstraction layer
         self.db = AnalyticsDB(db_path)
 
-        print(f"[DEBUG QUERY_LOGGER] Database type: {self.db.db_type}")
-        if self.db.db_type == 'sqlite':
-            print(f"[DEBUG QUERY_LOGGER] Database path: {self.db.db_path.absolute()}")
-
         # Async queue for non-blocking logging
         self.log_queue = Queue()
         self.is_running = False
         self.worker_thread = None
 
         # Initialize database schema
-        print(f"[DEBUG QUERY_LOGGER] Initializing database...")
         self._init_database()
-        print(f"[DEBUG QUERY_LOGGER] Database initialized")
 
         # Start async worker thread
         self._start_worker()
@@ -598,22 +592,17 @@ class QueryLogger:
                 cursor.execute(query, list(data.values()))
                 conn.commit()
                 conn.close()
-                print(f"[DEBUG QUERY_LOGGER] Successfully wrote to {table_name}: query_id={data.get('query_id', 'N/A')}")
                 return  # Success, exit retry loop
 
             except Exception as e:
                 error_msg = str(e)
-                print(f"[ERROR QUERY_LOGGER] Exception writing to {table_name}: {e}")
-                print(f"[ERROR QUERY_LOGGER] Data: {data}")
                 # Check if it's a foreign key error
                 if "foreign key constraint" in error_msg.lower() and attempt < max_retries - 1:
                     # Wait and retry (parent record might not be inserted yet)
                     time.sleep(retry_delay)
-                    print(f"[ERROR QUERY_LOGGER] Foreign key constraint, retrying {attempt + 1}/{max_retries}...")
                     logger.warning(f"Foreign key constraint error on {table_name}, retrying ({attempt + 1}/{max_retries})...")
                 else:
                     # Log error but don't crash
-                    print(f"[ERROR QUERY_LOGGER] Failed to write to {table_name} after retries")
                     logger.error(f"Error writing to database table {table_name}: {e}")
                     return
 
@@ -661,9 +650,7 @@ class QueryLogger:
 
         # Write synchronously to ensure queries table has the record BEFORE
         # any child tables (retrieved_documents, ranking_scores, etc.) are written
-        print(f"[DEBUG QUERY_LOGGER] log_query_start called for query_id={query_id}, about to write to queries table...")
         self._write_to_db("queries", data)
-        print(f"[DEBUG QUERY_LOGGER] log_query_start completed for query_id={query_id}")
 
     def log_query_complete(
         self,

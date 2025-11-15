@@ -266,13 +266,10 @@ class NLWebHandler:
 
         # Analytics: Generate unique query ID and log query start
         self.query_id = f"query_{int(time.time() * 1000)}"
-        print(f"[DEBUG] Generated query_id: {self.query_id}")
         query_logger = get_query_logger()
-        print(f"[DEBUG] Got query_logger: {query_logger}")
         query_start_time = time.time()
 
         try:
-            print(f"[DEBUG] About to call log_query_start")
             query_logger.log_query_start(
                 query_id=self.query_id,
                 user_id=self.oauth_id or "anonymous",
@@ -284,9 +281,7 @@ class NLWebHandler:
                 model=self.model,
                 parent_query_id=self.parent_query_id
             )
-            print(f"[DEBUG] Successfully called log_query_start")
         except Exception as e:
-            print(f"[DEBUG] EXCEPTION in log_query_start: {e}")
             logger.warning(f"Failed to log query start: {e}")
 
         try:
