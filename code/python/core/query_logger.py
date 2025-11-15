@@ -631,7 +631,7 @@ class QueryLogger:
         parent_query_id: str = None
     ) -> None:
         """
-        Log the start of a query.
+        Log the start of a query (SYNCHRONOUS - ensures queries table is written first).
 
         Args:
             query_id: Unique identifier for this query
@@ -659,7 +659,9 @@ class QueryLogger:
             "parent_query_id": parent_query_id,
         }
 
-        self.log_queue.put({"table": "queries", "data": data})
+        # Write synchronously to ensure queries table has the record BEFORE
+        # any child tables (retrieved_documents, ranking_scores, etc.) are written
+        self._write_to_db("queries", data)
 
     def log_query_complete(
         self,
