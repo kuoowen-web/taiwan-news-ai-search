@@ -661,7 +661,9 @@ class QueryLogger:
 
         # Write synchronously to ensure queries table has the record BEFORE
         # any child tables (retrieved_documents, ranking_scores, etc.) are written
+        print(f"[DEBUG QUERY_LOGGER] log_query_start called for query_id={query_id}, about to write to queries table...")
         self._write_to_db("queries", data)
+        print(f"[DEBUG QUERY_LOGGER] log_query_start completed for query_id={query_id}")
 
     def log_query_complete(
         self,
