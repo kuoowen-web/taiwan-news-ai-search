@@ -49,39 +49,6 @@ class GenerateAnswer(NLWebHandler):
         try:
             logger.info(f"Starting query execution for conversation_id: {self.conversation_id}")
 
-            # Analytics: Generate unique query ID and log query start (same as NLWebHandler)
-            import time
-            from core.query_logger import get_query_logger
-
-            self.query_id = f"query_{int(time.time() * 1000)}"
-            print(f"[DEBUG GenerateAnswer] Generated query_id: {self.query_id}")
-            query_logger = get_query_logger()
-            query_start_time = time.time()
-
-            try:
-                query_logger.log_query_start(
-                    query_id=self.query_id,
-                    user_id=self.oauth_id or "anonymous",
-                    query_text=self.query,
-                    site=str(self.site) if isinstance(self.site, list) else self.site,
-                    mode=self.generate_mode or "generate",
-                    decontextualized_query=self.decontextualized_query,
-                    conversation_id=self.conversation_id,
-                    model=self.model,
-                    parent_query_id=self.parent_query_id
-                )
-                print(f"[DEBUG GenerateAnswer] Successfully logged query start")
-            except Exception as e:
-                print(f"[DEBUG GenerateAnswer] Failed to log query start: {e}")
-                logger.warning(f"Failed to log query start: {e}")
-
-            # Send begin-nlweb-response message for analytics
-            try:
-                await self.message_sender.send_begin_response()
-            except Exception as e:
-                print(f"[DEBUG GenerateAnswer] Failed to send begin response: {e}")
-                logger.warning(f"Failed to send begin response: {e}")
-
             await self.prepare()
             if (self.query_done):
                 logger.info("Query done prematurely")
@@ -212,6 +179,39 @@ class GenerateAnswer(NLWebHandler):
 
     async def get_ranked_answers(self):
         logger.info("Starting retrieval and ranking process")
+
+        # Analytics: Generate unique query ID and log query start BEFORE any cache checks
+        # This ensures analytics logging happens even when using cached results
+        import time
+        from core.query_logger import get_query_logger
+
+        self.query_id = f"query_{int(time.time() * 1000)}"
+        print(f"[DEBUG GenerateAnswer] Generated query_id: {self.query_id}")
+        query_logger = get_query_logger()
+
+        try:
+            query_logger.log_query_start(
+                query_id=self.query_id,
+                user_id=self.oauth_id or "anonymous",
+                query_text=self.query,
+                site=str(self.site) if isinstance(self.site, list) else self.site,
+                mode=self.generate_mode or "generate",
+                decontextualized_query=self.decontextualized_query,
+                conversation_id=self.conversation_id,
+                model=self.model,
+                parent_query_id=self.parent_query_id
+            )
+            print(f"[DEBUG GenerateAnswer] Successfully logged query start")
+        except Exception as e:
+            print(f"[DEBUG GenerateAnswer] Failed to log query start: {e}")
+            logger.warning(f"Failed to log query start: {e}")
+
+        # Send begin-nlweb-response message for analytics
+        try:
+            await self.message_sender.send_begin_response()
+        except Exception as e:
+            print(f"[DEBUG GenerateAnswer] Failed to send begin response: {e}")
+            logger.warning(f"Failed to send begin response: {e}")
 
         # Check if we should reuse cached results from list mode
         # DEFAULT TO TRUE - only skip if explicitly set to false
