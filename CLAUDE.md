@@ -127,6 +127,45 @@ The codebase is on the `conversation-api-implementation` branch, focusing on:
 - Message persistence and retrieval
 - Maintaining backward compatibility with existing NLWebHandler
 
+## Algorithm Documentation Practice
+
+**IMPORTANT**: When implementing or modifying search/ranking algorithms, ALWAYS document in the `algo/` directory.
+
+### Documentation Requirements
+
+1. **Create/Update Algorithm Documentation** (`algo/{ALGORITHM_NAME}_implementation.md`):
+   - Algorithm purpose and overview
+   - Mathematical formulas and parameters
+   - Implementation details (tokenization, scoring, integration points)
+   - Code structure and file locations
+   - Testing strategy
+   - Performance metrics and expected impact
+   - Rollback plan
+
+2. **When to Document**:
+   - Before implementing a new algorithm
+   - When modifying existing algorithm parameters
+   - When changing integration points or data flow
+   - After A/B testing results (update with findings)
+
+3. **Examples of Algorithms to Document**:
+   - BM25 (keyword relevance)
+   - MMR (diversity re-ranking)
+   - XGBoost (machine learning ranking)
+   - Temporal boosting (recency scoring)
+   - Vector similarity (embedding-based)
+
+### File Naming Convention
+
+```
+algo/
+  BM25_implementation.md          # Keyword relevance algorithm
+  MMR_implementation.md           # Diversity re-ranking
+  XGBoost_implementation.md       # ML ranking model
+  temporal_boosting.md            # Time decay functions
+  hybrid_scoring.md               # Score combination strategies
+```
+
 ## Notes for Development
 
 - Always check existing patterns in neighboring files before implementing new features
@@ -134,3 +173,4 @@ The codebase is on the `conversation-api-implementation` branch, focusing on:
 - Results are guaranteed to come from the database (no hallucination in list mode)
 - Frontend and backend are designed to be independently deployable
 - Configuration changes require server restart
+- **Algorithm changes require documentation in `algo/` directory** (see Algorithm Documentation Practice above)

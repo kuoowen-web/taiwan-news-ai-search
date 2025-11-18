@@ -20,6 +20,7 @@ from qdrant_client.http.exceptions import UnexpectedResponse
 from core.config import CONFIG
 from core.embedding import get_embedding
 from core.retriever import RetrievalClientBase
+from core.bm25 import BM25Scorer
 from misc.logger.logging_config_helper import get_configured_logger
 from misc.logger.logger import LogLevel
 
@@ -687,9 +688,42 @@ class QdrantVectorClient(RetrievalClientBase):
                     on_topic_results = []  # Results that match critical keywords
                     off_topic_results = []  # Results that don't match critical keywords
 
+                    # Get BM25 configuration
+                    bm25_config = CONFIG.config_retrieval.get('bm25_params', {})
+                    use_bm25 = bm25_config.get('enabled', True)
+
+                    # Initialize BM25 scorer if enabled
+                    bm25_scorer = None
+                    avg_doc_length = 0
+                    term_doc_counts = {}
+                    corpus_size = len(search_result)
+
+                    if use_bm25 and corpus_size > 0:
+                        k1 = bm25_config.get('k1', 1.5)
+                        b = bm25_config.get('b', 0.75)
+                        alpha = bm25_config.get('alpha', 0.6)
+                        beta = bm25_config.get('beta', 0.4)
+
+                        bm25_scorer = BM25Scorer(k1=k1, b=b)
+
+                        # Prepare documents for corpus statistics
+                        documents = []
+                        for point in search_result:
+                            payload = point.payload
+                            doc_dict = {
+                                'name': payload.get("name", ""),
+                                'description': payload.get("schema_json", "")
+                            }
+                            documents.append(doc_dict)
+
+                        # Calculate corpus statistics
+                        avg_doc_length, term_doc_counts = bm25_scorer.calculate_corpus_stats(documents)
+                        logger.debug(f"BM25 corpus stats - avg_length: {avg_doc_length}, unique_terms: {len(term_doc_counts)}")
+
                     for point in search_result:
                         base_score = point.score
                         keyword_boost = 0
+                        bm25_score = 0.0
 
                         # Extract payload
                         payload = point.payload
@@ -743,27 +777,47 @@ class QdrantVectorClient(RetrievalClientBase):
                                     if has_critical_keyword:
                                         break
 
-                        # Calculate keyword boost
-                        for keyword in all_keywords:
-                            keyword_lower = keyword.lower()
-                            # VERY strong boost for keywords in title (3-4 char keywords get higher weight)
-                            if keyword_lower in name:
-                                # Longer keywords are more specific and should get higher boost
-                                if len(keyword) >= 3:
-                                    keyword_boost += 3.0  # 300% boost for 3+ char keywords in title
-                                else:
-                                    keyword_boost += 1.0  # 100% boost for 2-char keywords in title
-                            # Moderate boost for keywords in body
-                            elif keyword_lower in schema_json:
-                                if len(keyword) >= 3:
-                                    keyword_boost += 0.5  # 50% boost for 3+ char keywords in body
-                                else:
-                                    keyword_boost += 0.1  # 10% boost for 2-char keywords in body
+                        # Calculate BM25 score or fallback to keyword boost
+                        if use_bm25 and bm25_scorer:
+                            # BM25 scoring - combine title and description
+                            doc_title = payload.get("name", "")
+                            doc_description = payload.get("schema_json", "")
+                            # Weight title 3x by repeating it
+                            doc_text = f"{doc_title} {doc_title} {doc_title} {doc_description}"
 
-                        # Combined score: base similarity * (1 + keyword boost)
-                        # Example: 0.27 base * (1 + 6.0 boost for 零售+零售業 in title) = 1.89
-                        # This beats 0.51 base with no keyword match
-                        final_score = base_score * (1 + keyword_boost)
+                            # Calculate BM25 score
+                            bm25_score = bm25_scorer.calculate_score(
+                                query_tokens=all_keywords,
+                                document_text=doc_text,
+                                avg_doc_length=avg_doc_length,
+                                corpus_size=corpus_size,
+                                term_doc_counts=term_doc_counts
+                            )
+
+                            # Combined score: α * vector_score + β * bm25_score
+                            final_score = alpha * base_score + beta * bm25_score
+                        else:
+                            # OLD LOGIC: Simple keyword boosting (fallback)
+                            for keyword in all_keywords:
+                                keyword_lower = keyword.lower()
+                                # VERY strong boost for keywords in title (3-4 char keywords get higher weight)
+                                if keyword_lower in name:
+                                    # Longer keywords are more specific and should get higher boost
+                                    if len(keyword) >= 3:
+                                        keyword_boost += 3.0  # 300% boost for 3+ char keywords in title
+                                    else:
+                                        keyword_boost += 1.0  # 100% boost for 2-char keywords in title
+                                # Moderate boost for keywords in body
+                                elif keyword_lower in schema_json:
+                                    if len(keyword) >= 3:
+                                        keyword_boost += 0.5  # 50% boost for 3+ char keywords in body
+                                    else:
+                                        keyword_boost += 0.1  # 10% boost for 2-char keywords in body
+
+                            # Combined score: base similarity * (1 + keyword boost)
+                            # Example: 0.27 base * (1 + 6.0 boost for 零售+零售業 in title) = 1.89
+                            # This beats 0.51 base with no keyword match
+                            final_score = base_score * (1 + keyword_boost)
 
                         # Apply recency boost for temporal queries at retrieval level
                         # This is CRITICAL because we only pass top N results to the LLM ranker
@@ -808,6 +862,12 @@ class QdrantVectorClient(RetrievalClientBase):
                             except:
                                 # If we can't parse date, don't apply recency boost
                                 pass
+
+                        # Store BM25 and keyword boost scores in point for later logging
+                        if not hasattr(point, 'bm25_score'):
+                            point.bm25_score = bm25_score
+                        if not hasattr(point, 'keyword_boost'):
+                            point.keyword_boost = keyword_boost
 
                         # Separate on-topic vs off-topic results
                         if query_domains and has_critical_keyword:
@@ -864,6 +924,8 @@ class QdrantVectorClient(RetrievalClientBase):
                                     score_map[url] = {
                                         'vector_score': point.score,  # Original vector similarity score
                                         'final_score': final_score,   # After keyword + recency boosting
+                                        'bm25_score': getattr(point, 'bm25_score', 0.0),
+                                        'keyword_boost': getattr(point, 'keyword_boost', 0.0),
                                     }
                         else:
                             # Pure vector search - use top_results directly
@@ -887,6 +949,8 @@ class QdrantVectorClient(RetrievalClientBase):
                                 score_data = score_map.get(url, {})
                                 vector_score = score_data.get('vector_score', 0.0)
                                 final_score = score_data.get('final_score', 0.0)
+                                bm25_score = score_data.get('bm25_score', 0.0)
+                                keyword_boost_score = score_data.get('keyword_boost', 0.0)
 
                                 # Parse description from schema_json
                                 description = ""
@@ -907,7 +971,8 @@ class QdrantVectorClient(RetrievalClientBase):
                                     doc_description=description,
                                     retrieval_position=position,
                                     vector_similarity_score=float(vector_score),
-                                    keyword_boost_score=0.0,  # We don't track individual keyword boost separately
+                                    bm25_score=float(bm25_score),
+                                    keyword_boost_score=float(keyword_boost_score),
                                     final_retrieval_score=float(final_score),
                                     doc_source='qdrant_hybrid_search'
                                 )

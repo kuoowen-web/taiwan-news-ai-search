@@ -1,5 +1,13 @@
 write_endpoint: qdrant_url
 
+# BM25 keyword scoring parameters
+bm25_params:
+  enabled: true           # Enable BM25 scoring (set to false to use old keyword boosting)
+  k1: 1.5                 # Term saturation parameter (1.2-2.0)
+  b: 0.75                 # Length normalization parameter (0.5-0.9)
+  alpha: 0.6              # Vector score weight (alpha + beta should = 1.0)
+  beta: 0.4               # BM25 score weight
+
 endpoints:
 
 #Azure endpoints
