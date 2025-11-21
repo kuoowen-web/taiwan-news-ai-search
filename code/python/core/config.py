@@ -322,9 +322,26 @@ class AppConfig:
 
         # No longer using preferred_endpoint - now using enabled field on each endpoint
         self.retrieval_endpoints: Dict[str, RetrievalProviderConfig] = {}
-        
+
         # Get the write endpoint for database modifications
         self.write_endpoint: str = data.get("write_endpoint", None)
+
+        # Load BM25 parameters
+        self.bm25_params: Dict[str, Any] = data.get("bm25_params", {
+            "enabled": True,
+            "k1": 1.5,
+            "b": 0.75,
+            "alpha": 0.6,
+            "beta": 0.4
+        })
+
+        # Load MMR parameters
+        self.mmr_params: Dict[str, Any] = data.get("mmr_params", {
+            "enabled": True,
+            "lambda": 0.7,
+            "threshold": 3,
+            "include_vectors": True
+        })
 
         # Changed from providers to endpoints
         for name, cfg in data.get("endpoints", {}).items():

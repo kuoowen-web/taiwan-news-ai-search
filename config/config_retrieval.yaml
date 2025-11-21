@@ -8,6 +8,14 @@ bm25_params:
   alpha: 0.6              # Vector score weight (alpha + beta should = 1.0)
   beta: 0.4               # BM25 score weight
 
+# MMR diversity re-ranking parameters
+mmr_params:
+  enabled: true           # Enable MMR diversity re-ranking
+  lambda: 0.7             # Trade-off between relevance and diversity (0.0-1.0)
+                          # Higher λ = more relevance, lower λ = more diversity
+  threshold: 3            # Only apply MMR if we have more than this many results
+  include_vectors: true   # Retrieve document vectors from Qdrant for MMR calculation
+
 endpoints:
 
 #Azure endpoints

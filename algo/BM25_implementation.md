@@ -68,6 +68,130 @@ beta: 0.4            # BM25 score weight
 - Higher α (e.g., 0.7): Favor semantic similarity (vector)
 - Higher β (e.g., 0.6): Favor keyword matching (BM25)
 - Constraint: α + β = 1.0
+- **Dynamic Adjustment**: α/β values are automatically adjusted based on query intent (see Intent Detection section)
+
+---
+
+## Intent Detection & Dynamic α/β Adjustment
+
+**Purpose:** Automatically detect user search intent and adjust the balance between vector (semantic) and BM25 (keyword) scoring.
+
+**Implementation Location:** `code/python/retrieval_providers/qdrant.py:555-619` (`_detect_query_intent()` method)
+
+### Query Intent Types
+
+**1. EXACT_MATCH Intent** (α=0.4, β=0.6)
+- User expects precise keyword matching
+- BM25 score weighted higher than vector score
+- **Indicators:**
+  - Quoted strings (e.g., "exact phrase")
+  - Numbers or dates (e.g., "2024", "77期")
+  - Hashtags (e.g., "#martech")
+  - Proper nouns (consecutive capital letters, e.g., "Tiktok", "AI")
+  - Long queries (10+ characters)
+
+**2. SEMANTIC Intent** (α=0.7, β=0.3)
+- User expects broad conceptual understanding
+- Vector score weighted higher than BM25 score
+- **Indicators:**
+  - Question words (什麼, 如何, 為什麼, what, how, why)
+  - Concept words (概念, 趨勢, 影響, 原因, concept, trend, impact)
+  - Short queries (< 6 characters)
+
+**3. BALANCED Intent** (α=default, β=default)
+- Mixed or unclear intent
+- Use configured default values (typically α=0.6, β=0.4)
+- **Triggers:**
+  - Similar exact match and semantic scores
+  - General queries without strong indicators
+
+### Scoring Algorithm
+
+```python
+exact_score = 0
+semantic_score = 0
+
+# Exact match features (weighted scoring)
+if has_quotes: exact_score += 3
+if has_numbers: exact_score += 2
+if has_hashtags: exact_score += 2
+if has_proper_nouns: exact_score += 1
+if len(query) >= 10: exact_score += 1
+
+# Semantic features (weighted scoring)
+if has_question_words: semantic_score += 3
+if has_concept_words: semantic_score += 2
+if len(query) < 6: semantic_score += 1
+
+# Intent classification (2-point threshold)
+if exact_score > semantic_score + 2:
+    return (0.4, 0.6)  # EXACT_MATCH
+elif semantic_score > exact_score + 2:
+    return (0.7, 0.3)  # SEMANTIC
+else:
+    return (alpha_default, beta_default)  # BALANCED
+```
+
+### Examples
+
+**Example 1: Exact Match Query**
+```
+Query: "Martech雙周報第77期"
+Features: Quoted string (+3), Number "77" (+2), Long query (+1)
+Scores: exact=6, semantic=0
+Intent: EXACT_MATCH → α=0.4, β=0.6 (prioritize BM25)
+Result: Exact title match ranks top
+```
+
+**Example 2: Semantic Query**
+```
+Query: "什麼是AI趨勢"
+Features: Question word "什麼" (+3), Concept word "趨勢" (+2)
+Scores: exact=0, semantic=5
+Intent: SEMANTIC → α=0.7, β=0.3 (prioritize vector)
+Result: Conceptually related articles rank higher
+```
+
+**Example 3: Balanced Query**
+```
+Query: "AI martech工具"
+Features: Proper noun "AI" (+1)
+Scores: exact=1, semantic=0
+Intent: BALANCED → α=0.6, β=0.4 (use defaults)
+Result: Balanced semantic and keyword matching
+```
+
+### Implementation Status
+
+**✅ Phase 1: Rule-Based Intent Detection (Week 2)**
+- Simple scoring system based on query features
+- Hardcoded α/β values for each intent type
+- Minimal computational overhead (< 5ms)
+- No training data required
+
+**⏳ Phase 2: ML-Based Intent Classification (Week 4+)**
+- Train XGBoost classifier on user interaction data
+- Features: query length, has_quotes, CTR by intent type, etc.
+- Predict optimal α/β values (continuous, not categorical)
+- Requires 10,000+ labeled queries
+
+### Validation Approach
+
+**Manual Testing (Week 2-3):**
+- Collect 50 diverse queries
+- Manually label expected intent
+- Verify intent detection accuracy
+- Tune scoring thresholds if needed
+
+**A/B Testing (Week 3-4):**
+- Compare fixed α/β (0.6/0.4) vs intent-based adjustment
+- Metrics: CTR, dwell time, user satisfaction
+- Validate if dynamic adjustment improves results
+
+**ML Training Data (Week 4+):**
+- Log detected intent and α/β values in analytics database
+- Track user engagement by intent type
+- Use as features for XGBoost ranking model
 
 ---
 
@@ -130,17 +254,23 @@ Temporal Boosting (if applicable)
 Sort by final_score
 ```
 
-### New System (With BM25)
+### New System (With BM25 + Intent Detection)
 
 ```
 Vector Search (Qdrant)
     ↓
 Keyword Extraction
     ↓
-BM25 Scoring (NEW)
+Intent Detection (NEW - Week 2)
+    detect_query_intent() → (α, β)
+    EXACT_MATCH: α=0.4, β=0.6
+    SEMANTIC: α=0.7, β=0.3
+    BALANCED: α=default, β=default
+    ↓
+BM25 Scoring (NEW - Week 2)
     bm25_score = BM25Scorer.calculate_score(query_tokens, doc_text, avgdl, N)
     ↓
-Score Combination
+Score Combination (with dynamic α/β)
     final_score = α * vector_score + β * bm25_score
     ↓
 Temporal Boosting (if applicable)
@@ -183,14 +313,41 @@ class BM25Scorer:
 
 **Modified Function:** `hybrid_search()` (lines 599-913)
 
-**Changes:**
-1. **Line 746-766** (REPLACE): Remove simple keyword boosting logic
-2. **New section** (AFTER line 745):
-   - Initialize BM25Scorer
-   - Calculate corpus statistics (N, avgdl, term_doc_counts)
-   - Calculate BM25 score for each document
-   - Combine with vector score using α/β weights
-3. **Line 903-913** (UPDATE): Log bm25_score to analytics database
+**New Methods:**
+1. **`_detect_query_intent()`** (lines 555-619):
+   - Analyzes query for exact match features (quotes, numbers, hashtags, proper nouns, length)
+   - Analyzes query for semantic features (question words, concept words, short length)
+   - Calculates intent scores and returns adjusted (α, β) values
+   - Intent types: EXACT_MATCH (0.4, 0.6), SEMANTIC (0.7, 0.3), BALANCED (default)
+
+**Integration Changes:**
+1. **Lines 692-701**: Intent detection and BM25 configuration
+   - Load BM25 parameters from CONFIG
+   - Call `_detect_query_intent()` to get dynamic α/β values
+   - Print intent detection results to terminal
+
+2. **Lines 706-723**: BM25 scorer initialization
+   - Create BM25Scorer instance with k1, b parameters
+   - Prepare documents for corpus statistics calculation
+   - Calculate avg_doc_length and term_doc_counts
+
+3. **Lines 725-733**: Score storage dictionary
+   - Create `point_scores = {}` to store BM25/keyword scores by URL
+   - Avoids modifying immutable ScoredPoint objects
+
+4. **Lines 781-798**: BM25 scoring per document
+   - Combine title (3x weight) and description into doc_text
+   - Calculate BM25 score using query tokens and corpus stats
+   - Combine with vector score: `final_score = α * vector_score + β * bm25_score`
+
+5. **Lines 904-927**: Terminal output logging
+   - Print BM25 score breakdown for top 5 results
+   - Show vector score, BM25 score, α/β values, final score
+   - Display score combination formula
+
+6. **Lines 928-934**: Analytics database logging
+   - Log bm25_score, keyword_boost, vector_score, final_score to database
+   - Retrieve scores from point_scores dictionary by URL
 
 ---
 
@@ -358,9 +515,14 @@ If BM25 performance is worse than keyword boosting:
 ✅ **Qdrant Integration** (`code/python/retrieval_providers/qdrant.py`)
 - Feature flag: `bm25_params.enabled` in config (default: true)
 - Hybrid scoring: `α * vector_score + β * bm25_score`
+- Intent detection: Dynamic α/β adjustment based on query features
+  - EXACT_MATCH intent: α=0.4, β=0.6 (prioritize keyword matching)
+  - SEMANTIC intent: α=0.7, β=0.3 (prioritize semantic similarity)
+  - BALANCED intent: Use default α/β values
 - Title weighting: 3x repetition in document text
 - Fallback to old keyword boosting if BM25 disabled
 - Analytics logging: bm25_score, keyword_boost_score, final_score
+- Terminal output: BM25 score breakdown for top 5 results
 
 ✅ **Configuration** (`config/config_retrieval.yaml`)
 ```yaml
@@ -399,6 +561,7 @@ bm25_params:
 |------|---------|---------|--------|
 | 2025-11-18 | 1.0 | Initial documentation | Claude |
 | 2025-11-18 | 1.1 | Implementation complete (Phase 1-2) | Claude |
+| 2025-11-18 | 1.2 | Added intent detection for dynamic α/β adjustment | Claude |
 
 ---
 

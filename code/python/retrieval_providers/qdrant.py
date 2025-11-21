@@ -552,47 +552,130 @@ class QdrantVectorClient(RetrievalClientBase):
             must=[models.FieldCondition(key="site", match=models.MatchAny(any=sites))]
         )
     
-    def _format_results(self, search_result: List[models.ScoredPoint]) -> List[List[str]]:
+    def _detect_query_intent(self, query: str, alpha_default: float, beta_default: float) -> Tuple[float, float]:
         """
-        Format Qdrant search results to match expected API: [url, text_json, name, site].
-        
+        Detect query intent (exact match vs semantic) and adjust alpha/beta weights.
+
+        Args:
+            query: The search query
+            alpha_default: Default alpha (vector weight)
+            beta_default: Default beta (BM25 weight)
+
+        Returns:
+            Tuple[float, float]: (alpha, beta) weights based on intent
+        """
+        import re
+
+        # Exact match intent features
+        has_quotes = '"' in query or '"' in query or '"' in query
+        has_numbers = bool(re.search(r'\d+', query))
+        has_hashtag = '#' in query
+
+        # Detect proper nouns (capitalized English words)
+        proper_nouns = re.findall(r'\b[A-Z][a-z]+\b', query)
+
+        # Semantic intent features
+        question_words = ['如何', '為什麼', '什麼', '怎麼', 'how', 'why', 'what', 'when', 'where']
+        has_question = any(word in query.lower() for word in question_words)
+
+        concept_words = ['趨勢', '策略', '方法', '應用', '發展', '技術', 'trend', 'strategy', 'approach', 'development']
+        has_concept = any(word in query.lower() for word in concept_words)
+
+        # Query length (Chinese characters + English words)
+        chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', query))
+        english_words = len(re.findall(r'\b[a-zA-Z]{2,}\b', query))
+        total_length = chinese_chars + english_words
+
+        # Calculate intent scores
+        exact_score = 0
+        if has_quotes: exact_score += 3
+        if has_numbers: exact_score += 2
+        if has_hashtag: exact_score += 2
+        if len(proper_nouns) >= 2: exact_score += 2
+        if total_length > 15: exact_score += 1  # Long queries tend to be specific
+
+        semantic_score = 0
+        if has_question: semantic_score += 3
+        if has_concept: semantic_score += 2
+        if total_length < 8: semantic_score += 1  # Short queries tend to be exploratory
+
+        # Decide alpha/beta based on intent
+        if exact_score > semantic_score + 2:
+            # Strong exact match intent
+            alpha, beta = 0.4, 0.6
+            intent_type = "EXACT_MATCH"
+        elif semantic_score > exact_score + 2:
+            # Strong semantic intent
+            alpha, beta = 0.7, 0.3
+            intent_type = "SEMANTIC"
+        else:
+            # Balanced or unclear - use default
+            alpha, beta = alpha_default, beta_default
+            intent_type = "BALANCED"
+
+        logger.debug(f"Query intent: {intent_type} (exact_score={exact_score}, semantic_score={semantic_score}) → α={alpha}, β={beta}")
+        print(f"[INTENT] {intent_type}: α={alpha:.1f}, β={beta:.1f} | Query: {query[:50]}")
+
+        return alpha, beta
+
+    def _format_results(self, search_result: List[models.ScoredPoint], include_vectors: bool = False) -> List[List[str]]:
+        """
+        Format Qdrant search results to match expected API: [url, text_json, name, site] or [url, text_json, name, site, vector].
+
         Args:
             search_result: Qdrant search results
-            
+            include_vectors: Whether to include document vectors (for MMR)
+
         Returns:
             List[List[str]]: Formatted results
         """
+        print(f"[_format_results] Called with include_vectors={include_vectors}, {len(search_result)} items")
         results = []
-        for item in search_result:
+        vectors_found = 0
+        for i, item in enumerate(search_result):
             payload = item.payload
             url = payload.get("url", "")
             schema = payload.get("schema_json", "")
             name = payload.get("name", "")
             site_name = payload.get("site", "")
 
-            results.append([url, schema, name, site_name])
+            has_vector = hasattr(item, 'vector') and item.vector is not None
+            if i == 0:
+                print(f"[_format_results] First item: has_vector={has_vector}, include_vectors={include_vectors}")
 
+            if include_vectors and has_vector:
+                # Include vector as 5th element for MMR
+                results.append([url, schema, name, site_name, item.vector])
+                vectors_found += 1
+            else:
+                # Standard format without vector
+                results.append([url, schema, name, site_name])
+
+        print(f"[_format_results] Returning {len(results)} results, vectors_found={vectors_found}")
+        if results:
+            print(f"[_format_results] First result has {len(results[0])} elements")
         return results
     
-    async def search(self, query: str, site: Union[str, List[str]], 
+    async def search(self, query: str, site: Union[str, List[str]],
                    num_results: int = 50, collection_name: Optional[str] = None,
-                   query_params: Optional[Dict[str, Any]] = None, **kwargs) -> List[List[str]]:
+                   query_params: Optional[Dict[str, Any]] = None,
+                   include_vectors: bool = False, **kwargs) -> List[List[str]]:
         """
         Search the Qdrant collection for records filtered by site and ranked by vector similarity.
-        
+
         Args:
             query: The search query to embed and search with
             site: Site to filter by (string or list of strings)
             num_results: Maximum number of results to return
             collection_name: Optional collection name (defaults to configured name)
             query_params: Additional query parameters
-            
+            include_vectors: Whether to include document vectors in results (for MMR)
+
         Returns:
             List[List[str]]: List of search results in format [url, text_json, name, site]
         """
         collection_name = collection_name or self.default_collection_name
-        print(f"========== QDRANT SEARCH CALLED: num_results={num_results}, site={site} ==========")
-        logger.info(f"Starting Qdrant search - collection: {collection_name}, site: {site}, num_results: {num_results}")
+        logger.info(f"Starting Qdrant search - collection: {collection_name}, site: {site}, num_results: {num_results}, include_vectors: {include_vectors}")
         logger.debug(f"Query: {query}")
         
         try:
@@ -680,17 +763,35 @@ class QdrantVectorClient(RetrievalClientBase):
                     limit=retrieval_limit,
                     query_filter=filter_condition,
                     with_payload=True,
+                    with_vectors=include_vectors,  # Include vectors for MMR if requested
                 )
+
+                # DIAGNOSTIC: Check if Qdrant returned vectors
+                if search_result:
+                    print(f"[Qdrant POST-SEARCH] Retrieved {len(search_result)} points, include_vectors={include_vectors}")
+                    first_point = search_result[0]
+                    has_vector = hasattr(first_point, 'vector') and first_point.vector is not None
+                    print(f"[Qdrant POST-SEARCH] First point has vector: {has_vector}")
+                    if has_vector:
+                        print(f"[Qdrant POST-SEARCH] Vector length: {len(first_point.vector)}")
 
                 # Apply keyword boosting to results
                 if all_keywords:
                     scored_results = []
                     on_topic_results = []  # Results that match critical keywords
                     off_topic_results = []  # Results that don't match critical keywords
+                    point_scores = {}  # Dictionary to store BM25/keyword scores by URL
 
                     # Get BM25 configuration
-                    bm25_config = CONFIG.config_retrieval.get('bm25_params', {})
+                    bm25_config = CONFIG.bm25_params
                     use_bm25 = bm25_config.get('enabled', True)
+                    k1 = bm25_config.get('k1', 1.5)
+                    b = bm25_config.get('b', 0.75)
+
+                    # Detect query intent and adjust alpha/beta accordingly
+                    alpha_default = bm25_config.get('alpha', 0.6)
+                    beta_default = bm25_config.get('beta', 0.4)
+                    alpha, beta = self._detect_query_intent(query, alpha_default, beta_default)
 
                     # Initialize BM25 scorer if enabled
                     bm25_scorer = None
@@ -699,10 +800,6 @@ class QdrantVectorClient(RetrievalClientBase):
                     corpus_size = len(search_result)
 
                     if use_bm25 and corpus_size > 0:
-                        k1 = bm25_config.get('k1', 1.5)
-                        b = bm25_config.get('b', 0.75)
-                        alpha = bm25_config.get('alpha', 0.6)
-                        beta = bm25_config.get('beta', 0.4)
 
                         bm25_scorer = BM25Scorer(k1=k1, b=b)
 
@@ -718,6 +815,7 @@ class QdrantVectorClient(RetrievalClientBase):
 
                         # Calculate corpus statistics
                         avg_doc_length, term_doc_counts = bm25_scorer.calculate_corpus_stats(documents)
+                        print(f"[BM25] Corpus stats - avg_length: {avg_doc_length:.1f}, unique_terms: {len(term_doc_counts)}")
                         logger.debug(f"BM25 corpus stats - avg_length: {avg_doc_length}, unique_terms: {len(term_doc_counts)}")
 
                     for point in search_result:
@@ -727,6 +825,7 @@ class QdrantVectorClient(RetrievalClientBase):
 
                         # Extract payload
                         payload = point.payload
+                        doc_url = payload.get("url", "")  # Get URL for score mapping
                         name = payload.get("name", "").lower()
                         schema_json = payload.get("schema_json", "").lower()
 
@@ -863,11 +962,12 @@ class QdrantVectorClient(RetrievalClientBase):
                                 # If we can't parse date, don't apply recency boost
                                 pass
 
-                        # Store BM25 and keyword boost scores in point for later logging
-                        if not hasattr(point, 'bm25_score'):
-                            point.bm25_score = bm25_score
-                        if not hasattr(point, 'keyword_boost'):
-                            point.keyword_boost = keyword_boost
+                        # Store BM25 and keyword boost scores in dictionary for later logging
+                        if doc_url:
+                            point_scores[doc_url] = {
+                                'bm25_score': bm25_score,
+                                'keyword_boost': keyword_boost
+                            }
 
                         # Separate on-topic vs off-topic results
                         if query_domains and has_critical_keyword:
@@ -897,15 +997,47 @@ class QdrantVectorClient(RetrievalClientBase):
                     # Take top num_results
                     top_results = [point for _, point in scored_results[:num_results]]
 
+                    print(f"[HYBRID SEARCH] Retrieved {len(search_result)} candidates, returning top {len(top_results)} results")
                     logger.info(f"Hybrid search: retrieved {len(search_result)} candidates, returning top {len(top_results)} results")
                     logger.debug(f"Top 5 boosted scores: {[(f'{r[0]:.3f}', r[1].payload.get('name', '')[:40]) for r in scored_results[:5]]}")
+
+                    # Log BM25 scores for top 5 results (if BM25 enabled)
+                    if use_bm25 and scored_results:
+                        print("=" * 70)
+                        print("=== BM25 Score Breakdown (Top 5) ===")
+                        logger.info("=== BM25 Score Breakdown (Top 5) ===")
+                        for i, (final_score, point) in enumerate(scored_results[:5], 1):
+                            url = point.payload.get("url", "")
+                            title = point.payload.get("name", "")[:60]
+                            scores = point_scores.get(url, {'bm25_score': 0.0, 'keyword_boost': 0.0})
+                            vector_score = point.score
+                            bm25_score = scores['bm25_score']
+
+                            print(f"  [{i}] {title}")
+                            print(f"      Vector: {vector_score:.4f} | BM25: {bm25_score:.4f} | Final: {final_score:.4f}")
+                            print(f"      Calculation: {alpha:.2f} * {vector_score:.4f} + {beta:.2f} * {bm25_score:.4f} = {final_score:.4f}")
+                            logger.info(f"  [{i}] {title}")
+                            logger.info(f"      Vector: {vector_score:.4f} | BM25: {bm25_score:.4f} | Final: {final_score:.4f}")
+                            logger.info(f"      Calculation: {alpha:.2f} * {vector_score:.4f} + {beta:.2f} * {bm25_score:.4f} = {final_score:.4f}")
+                        print("=" * 70)
+                        logger.info("=" * 50)
                 else:
                     # No keywords, use vector results as-is
                     top_results = search_result[:num_results]
                     logger.info(f"No keywords found, using pure vector search: {len(top_results)} results")
 
+                # DIAGNOSTIC: Check if vectors survived keyword boosting
+                if top_results:
+                    print(f"[Qdrant PRE-FORMAT] Formatting {len(top_results)} results, include_vectors={include_vectors}")
+                    first = top_results[0]
+                    print(f"[Qdrant PRE-FORMAT] First result type: {type(first)}")
+                    has_vector = hasattr(first, 'vector') and first.vector is not None
+                    print(f"[Qdrant PRE-FORMAT] First result has vector: {has_vector}")
+                    if has_vector:
+                        print(f"[Qdrant PRE-FORMAT] Vector length: {len(first.vector)}")
+
                 # Format the results
-                results = self._format_results(top_results)
+                results = self._format_results(top_results, include_vectors=include_vectors)
 
                 # Analytics: Log retrieved documents with scores
                 handler = kwargs.get('handler')
@@ -921,11 +1053,13 @@ class QdrantVectorClient(RetrievalClientBase):
                             for final_score, point in scored_results[:num_results]:
                                 url = point.payload.get("url", "")
                                 if url:
+                                    # Get scores from point_scores dictionary
+                                    scores = point_scores.get(url, {'bm25_score': 0.0, 'keyword_boost': 0.0})
                                     score_map[url] = {
                                         'vector_score': point.score,  # Original vector similarity score
                                         'final_score': final_score,   # After keyword + recency boosting
-                                        'bm25_score': getattr(point, 'bm25_score', 0.0),
-                                        'keyword_boost': getattr(point, 'keyword_boost', 0.0),
+                                        'bm25_score': scores['bm25_score'],
+                                        'keyword_boost': scores['keyword_boost'],
                                     }
                         else:
                             # Pure vector search - use top_results directly
@@ -994,6 +1128,11 @@ class QdrantVectorClient(RetrievalClientBase):
                     "embedding_dim": len(embedding),
                 }
             )
+
+            # DIAGNOSTIC: Final check before returning
+            print(f"[Qdrant FINAL-RETURN] About to return {len(results)} results")
+            if results:
+                print(f"[Qdrant FINAL-RETURN] First result has {len(results[0])} elements")
 
             return results
             
