@@ -1136,11 +1136,15 @@ async def search(query: str,
         kwargs['handler'] = handler
     import qdrant_client
     from qdrant_client import AsyncQdrantClient
+
     print("\n===== QDRANT DEBUG =====")
+    print("MODULE FILE:", getattr(qdrant_client, "__file__", "NO FILE"))
+    print("MODULE NAME:", qdrant_client.__name__)
     print("VERSION:", getattr(qdrant_client, "__version__", "UNKNOWN"))
     print("HAS search:", "search" in dir(AsyncQdrantClient))
     print("SEARCH METHODS:", [m for m in dir(AsyncQdrantClient) if "search" in m])
     print("=========================\n")
+
 
     results = await client.search(query, site, num_results, **kwargs)
     
