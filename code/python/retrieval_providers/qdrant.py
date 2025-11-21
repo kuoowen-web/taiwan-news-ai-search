@@ -164,7 +164,16 @@ class QdrantVectorClient(RetrievalClientBase):
             
             # Create client with the determined parameters
             client = AsyncQdrantClient(**params)
-            
+
+            # Log qdrant-client version for debugging
+            try:
+                import qdrant_client
+                import pkg_resources
+                version = pkg_resources.get_distribution("qdrant-client").version
+                logger.info(f"Using qdrant-client version: {version}")
+            except Exception:
+                logger.warning("Could not determine qdrant-client version")
+
             # Test connection by getting collections
             collections = await client.get_collections()
             logger.debug(f"Available collections: {collections.collections}")
