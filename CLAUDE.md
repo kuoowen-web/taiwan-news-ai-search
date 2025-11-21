@@ -155,12 +155,12 @@ The codebase is on the `conversation-api-implementation` branch, focusing on:
    - After A/B testing results (update with findings)
 
 3. **Examples of Algorithms to Document**:
-   - BM25 (keyword relevance) ✅ IMPLEMENTED
-   - MMR (diversity re-ranking) - In Progress
+   - BM25 (keyword relevance) ✅ IMPLEMENTED (Week 1-2)
+   - MMR (diversity re-ranking) ✅ IMPLEMENTED (Week 1-2)
+   - Intent detection (query classification for α/β and λ adjustment) ✅ IMPLEMENTED (Week 1-2)
    - XGBoost (machine learning ranking) - Week 4+
-   - Temporal boosting (recency scoring)
-   - Vector similarity (embedding-based)
-   - Intent detection (query classification for α/β adjustment) ✅ IMPLEMENTED
+   - Temporal boosting (recency scoring) - Partially implemented
+   - Vector similarity (embedding-based) - Existing
 
 ### File Naming Convention
 

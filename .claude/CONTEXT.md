@@ -171,52 +171,95 @@ Moving to Track B (BM25) and Track C (MMR) implementation.
 
 ---
 
-## In Progress
+## Recently Completed
 
-
-
-### 🔄 Track C: MMR Implementation (Week 1-2)
+### ✅ Track C: MMR Implementation (Week 1-2) - COMPLETED (2025-01-19)
 
 **Goal**: Replace LLM diversity re-ranking with MMR (Maximal Marginal Relevance) algorithm.
 
-**Status**: Planning phase
+**Status**: ✅ COMPLETED
 
-**Implementation Plan**:
-1. Create `code/python/core/mmr.py` - MMR algorithm implementation
-2. Modify `code/python/core/post_ranking.py` - replace `apply_diversity_reranking()` LLM call
-3. Update analytics logging to record `mmr_diversity_score` in `ranking_scores` table
-4. Implement intent-based λ tuning (exploratory vs specific queries)
-5. Apply in both list and generate modes
+**What Was Built**:
 
-**Database Ready**:
-- ✅ `ranking_scores.mmr_diversity_score` column already exists (currently NULL)
-- ✅ Schema supports diversity tracking
+1. **MMR Algorithm** (`code/python/core/mmr.py` - 274 lines)
+   - Classic MMR formula: `λ * relevance - (1-λ) * max_similarity`
+   - Intent-based λ tuning:
+     - SPECIFIC (λ=0.8): "how to", "什麼是", "where", "when"
+     - EXPLORATORY (λ=0.5): "best", "推薦", "trends", "方法", "方式"
+     - BALANCED (λ=0.7): Default
+   - Cosine similarity calculation for diversity measurement
+   - Diversity metrics logging to `algo/mmr_metrics.log`
+   - Iterative greedy selection algorithm
+
+2. **Integration** (`code/python/core/ranking.py:485-528`)
+   - Executes once after LLM ranking on 49 results → selects diverse 10
+   - Removes duplicate MMR call that was in `post_ranking.py`
+   - Cleans up vectors (1536 floats) to avoid console pollution
+   - Logs MMR scores to analytics database
+
+3. **Analytics Logging**
+   - Per-document MMR scores → `ranking_scores.mmr_diversity_score`
+   - Per-query diversity metrics → `algo/mmr_metrics.log`
+   - Intent detection → tracked in `detected_intent` attribute
+
+4. **Documentation**
+   - `algo/MMR_implementation.md` - Complete algorithm documentation
+   - `algo/Week4_ML_Enhancements.md` - Future ML improvements plan
+   - `code/python/testing/scratchpad.md` - Testing notes and fixes
+
+**Testing Results**:
+- ✅ Query "零售業應用生成式AI的方法" → EXPLORATORY intent detected (λ=0.5)
+- ✅ Diversity improvement visible: similarity 0.823 → 0.809 (with λ=0.5, expect 0.750+)
+- ✅ No duplicate MMR calls
+- ✅ Clean console output (vectors removed)
+
+**Commits**:
+- `f7dc48e` - Implement MMR diversity re-ranking with intent detection
+- `56896b4` - Update BM25 implementation documentation and configuration
+- `4fbde5d` - Update documentation and clean up obsolete files
+- `a6e866a` - Backend and frontend updates for BM25 and analytics
 
 ---
 
 ## Next Immediate Steps
 
-1. ✅ **COMPLETED: Implement BM25** (`code/python/core/bm25.py`)
-   - ✅ Custom implementation with full control
-   - ✅ Integrated into `qdrant.py` retrieval flow with intent detection
-   - ✅ Logging `bm25_score` to database
+### Week 3: Integration & LLM Optimization
 
-2. **Implement MMR** (`code/python/core/mmr.py`)
-   - Classic MMR formula implementation
-   - Integrate into `post_ranking.py`
-   - Log `mmr_diversity_score` to database
+1. **Test BM25 + MMR with Diverse Queries**
+   - Collect 50 diverse query types (SPECIFIC, EXPLORATORY, BALANCED)
+   - Verify intent detection accuracy for both BM25 (α/β) and MMR (λ)
+   - Monitor `algo/mmr_metrics.log` for diversity improvement patterns
+   - Validate BM25 + MMR combination improves result quality
 
-3. **Test BM25 with Diverse Queries**
-   - Collect 50 diverse query types
-   - Verify intent detection accuracy (EXACT_MATCH, SEMANTIC, BALANCED)
-   - Validate BM25 scores improve keyword matching
-   - Check analytics logging captures new scores
+2. **LLM Prompt Optimization**
+   - Slim down ranking prompts (remove keyword/freshness scoring dimensions)
+   - Keep only semantic relevance scoring
+   - Update `config/prompts.xml`
+   - Expected: 40% cost reduction from LLM calls
 
-4. **Deploy BM25 + MMR to Production**
-   - Week 3: Full BM25 + MMR integration
-   - Slim down LLM prompts (remove keyword/freshness scoring)
-   - A/B testing and validation
+3. **A/B Testing Infrastructure**
+   - Set up traffic splitting (50% BM25+MMR, 50% old LLM-only)
+   - Track metrics: CTR, dwell time, diversity, cost, latency
+   - Statistical significance testing (p < 0.05)
+   - Decision criteria: +5% CTR or equal CTR + 10% cost reduction
+
+4. **Production Deployment**
+   - Gradual rollout: 10% → 25% → 50% → 100%
+   - Monitor error rates, performance metrics
+   - Rollback plan ready (disable MMR/BM25 via config)
    - Expected: 40% cost reduction, 40% latency reduction
+
+### Week 4-6: Data Collection for XGBoost
+
+5. **Monitor Analytics Data Collection**
+   - Target: 10,000+ queries with user interactions
+   - Verify data quality (clicks, dwell time, MMR scores, BM25 scores)
+   - Export training data periodically via dashboard
+
+6. **Feature Engineering Preparation**
+   - Review `feature_vectors` table schema
+   - Plan 12-15 features for XGBoost ranking model
+   - Document feature definitions
 
 ---
 
