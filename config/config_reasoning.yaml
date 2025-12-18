@@ -4,6 +4,15 @@ reasoning:
   analyst_timeout: 60
   critic_timeout: 30
   writer_timeout: 45
+  tracing:
+    console:
+      enabled: true
+      level: DEBUG  # ERROR, WARN, INFO, DEBUG, TRACE (local dev default: DEBUG)
+      colors: true
+    file:
+      enabled: true
+      save_event_stream: true
+      save_full_data: true
 
 source_tiers:
   # Tier 1: Official (3 sources)

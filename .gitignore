@@ -510,3 +510,17 @@ code/python/training/train_phase_c1.py
 # Editor/IDE files
 .obsidian/
 
+# Ignore backups and temp versions in architecture tests
+tests/architecture_dev/*backup*
+tests/architecture_dev/*old*
+tests/architecture_dev/*.old*
+tests/architecture_dev/*~
+
+# General temporary/backup patterns
+*~
+*.old*
+*_backup*
+*.backup
+*.tmp
+
+

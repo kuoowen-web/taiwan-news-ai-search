@@ -191,12 +191,34 @@ class DeepResearchOrchestrator:
         query_id = getattr(self.handler, 'query_id', f'reasoning_{hash(query)}')
         iteration_logger = IterationLogger(query_id)
 
+        # Initialize console tracer
+        tracer = None
+        tracing_config = CONFIG.reasoning_params.get("tracing", {})
+        if tracing_config.get("console", {}).get("enabled", True):
+            import os
+            verbosity = os.getenv("REASONING_TRACE_LEVEL") or \
+                        tracing_config.get("console", {}).get("level", "DEBUG")
+            from reasoning.utils.console_tracer import ConsoleTracer
+            tracer = ConsoleTracer(query_id=query_id, verbosity=verbosity)
+
         self.logger.info(f"Starting deep research: query='{query}', mode={mode}, items={len(items)}")
+
+        # Tracing: Research start
+        if tracer:
+            tracer.start_research(query=query, mode=mode, items=items)
 
         try:
             # Phase 1: Filter and enrich context by source tier
             current_context = self.source_filter.filter_and_enrich(items, mode)
             self.logger.info(f"Filtered context: {len(current_context)} sources (from {len(items)})")
+
+            # Tracing: Source filtering
+            if tracer:
+                tracer.source_filtering(
+                    original_items=items,
+                    filtered_items=current_context,
+                    mode=mode
+                )
 
             # Check if we have any sources to work with
             if not current_context or len(current_context) == 0:
@@ -225,6 +247,13 @@ class DeepResearchOrchestrator:
             # NEW: Unified context formatting (Single Source of Truth)
             self.formatted_context, self.source_map = self._format_context_shared(current_context)
 
+            # Tracing: Context formatted
+            if tracer:
+                tracer.context_formatted(
+                    source_map=self.source_map,
+                    formatted_context=self.formatted_context
+                )
+
             # Phase 2: Actor-Critic Loop
             max_iterations = CONFIG.reasoning_params.get("max_iterations", 3)
             iteration = 0
@@ -234,6 +263,10 @@ class DeepResearchOrchestrator:
 
             while iteration < max_iterations:
                 self.logger.info(f"Starting iteration {iteration + 1}/{max_iterations}")
+
+                # Tracing: Iteration start
+                if tracer:
+                    tracer.start_iteration(iteration + 1, max_iterations)
 
                 # Send progress: Analyst analyzing
                 await self._send_progress({
@@ -248,11 +281,27 @@ class DeepResearchOrchestrator:
                     # Revise based on critique
                     reject_count += 1
                     self.logger.info("Analyst revising draft based on critique")
-                    response = await self.analyst.revise(
-                        original_draft=draft,
-                        review=review,
-                        formatted_context=self.formatted_context  # Pass unified context
-                    )
+                    analyst_input = {
+                        "original_draft": draft,
+                        "review": review,
+                        "formatted_context": self.formatted_context
+                    }
+
+                    if tracer:
+                        with tracer.agent_span("analyst", "revise", analyst_input) as span:
+                            response = await self.analyst.revise(
+                                original_draft=draft,
+                                review=review,
+                                formatted_context=self.formatted_context
+                            )
+                            span.set_result(response)
+                    else:
+                        response = await self.analyst.revise(
+                            original_draft=draft,
+                            review=review,
+                            formatted_context=self.formatted_context
+                        )
+
                     iteration_logger.log_agent_output(
                         iteration=iteration + 1,
                         agent_name="analyst_revise",
@@ -262,12 +311,30 @@ class DeepResearchOrchestrator:
                 else:
                     # Initial research
                     self.logger.info("Analyst conducting research")
-                    response = await self.analyst.research(
-                        query=query,
-                        formatted_context=self.formatted_context,  # Pass unified context
-                        mode=mode,
-                        temporal_context=temporal_context
-                    )
+                    analyst_input = {
+                        "query": query,
+                        "formatted_context": self.formatted_context,
+                        "mode": mode,
+                        "temporal_context": temporal_context
+                    }
+
+                    if tracer:
+                        with tracer.agent_span("analyst", "research", analyst_input) as span:
+                            response = await self.analyst.research(
+                                query=query,
+                                formatted_context=self.formatted_context,
+                                mode=mode,
+                                temporal_context=temporal_context
+                            )
+                            span.set_result(response)
+                    else:
+                        response = await self.analyst.research(
+                            query=query,
+                            formatted_context=self.formatted_context,
+                            mode=mode,
+                            temporal_context=temporal_context
+                        )
+
                     iteration_logger.log_agent_output(
                         iteration=iteration + 1,
                         agent_name="analyst_research",
@@ -281,6 +348,17 @@ class DeepResearchOrchestrator:
                         f"Analyst requested additional search (iteration {iteration + 1}): "
                         f"{response.new_queries}"
                     )
+
+                    # Tracing: Gap detection
+                    if tracer:
+                        tracer.condition_branch(
+                            "GAP_DETECTION",
+                            "SEARCH_REQUIRED",
+                            {
+                                "missing_information": response.missing_information,
+                                "new_queries": response.new_queries
+                            }
+                        )
 
                     # Send progress message to frontend
                     await self._send_progress({
@@ -318,6 +396,17 @@ class DeepResearchOrchestrator:
                         # Merge with existing context
                         current_context.extend(new_context)
                         self.logger.info(f"Added {len(new_context)} sources from secondary search (total: {len(current_context)})")
+
+                        # Tracing: Secondary search context update
+                        if tracer:
+                            tracer.context_update(
+                                "SECONDARY_SEARCH",
+                                {
+                                    "queries_executed": response.new_queries,
+                                    "results_found": len(secondary_results),
+                                    "new_sources_added": len(new_context)
+                                }
+                            )
 
                         # Re-format unified context with updated citations
                         self.formatted_context, self.source_map = self._format_context_shared(current_context)
@@ -375,7 +464,19 @@ class DeepResearchOrchestrator:
                 })
 
                 self.logger.info("Critic reviewing draft")
-                review = await self.critic.review(draft, query, mode)
+                critic_input = {
+                    "draft": draft,
+                    "query": query,
+                    "mode": mode
+                }
+
+                if tracer:
+                    with tracer.agent_span("critic", "review", critic_input) as span:
+                        review = await self.critic.review(draft, query, mode)
+                        span.set_result(review)
+                else:
+                    review = await self.critic.review(draft, query, mode)
+
                 iteration_logger.log_agent_output(
                     iteration=iteration + 1,
                     agent_name="critic",
@@ -391,8 +492,23 @@ class DeepResearchOrchestrator:
                 })
 
                 # Check convergence
+                # Tracing: Convergence check
+                if tracer:
+                    tracer.condition_branch(
+                        "CONVERGENCE",
+                        review.status,
+                        {
+                            "critique": review.critique[:200] + "..." if len(review.critique) > 200 else review.critique,
+                            "suggestions": review.suggestions,
+                            "mode_compliance": review.mode_compliance
+                        }
+                    )
+
                 if review.status in ["PASS", "WARN"]:
                     self.logger.info(f"Convergence achieved: {review.status}")
+                    # Tracing: Iteration end
+                    if tracer:
+                        tracer.end_iteration()
                     break
 
                 iteration += 1
