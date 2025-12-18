@@ -93,3 +93,4 @@ numpy>=1.24.0
 scikit-learn>=1.3.0
 xgboost>=2.0.0
 scipy>=1.11.0  # Statistical functions for XGBoost comparison metrics (Kendall's Tau)
+rich>=13.7.0  # Console formatting with panels, syntax highlighting, and pretty printing

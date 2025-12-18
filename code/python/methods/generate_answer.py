@@ -627,7 +627,17 @@ class GenerateAnswer(NLWebHandler):
             response = await PromptRunner(self).run_prompt(self.SYNTHESIZE_PROMPT_NAME, timeout=100, verbose=True, max_length=2048)
             logger.debug(f"Synthesis response received")
 
-            # DEBUG: Print full response to see what LLM returned
+            # Check if response is None (prompt not found or LLM error)
+            if response is None:
+                logger.error("Synthesis prompt returned None - prompt may not be found or LLM error occurred")
+                message = {
+                    "message_type": "nlws",
+                    "@type": "GeneratedAnswer",
+                    "answer": "抱歉，無法生成回答。系統配置可能有問題，請聯繫管理員。",
+                    "items": []
+                }
+                await self.send_message(message)
+                return
 
             json_results = []
             description_tasks = []

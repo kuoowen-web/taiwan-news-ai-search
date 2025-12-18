@@ -18,7 +18,9 @@ def setup_api_routes(app: web.Application):
     # Query endpoints
     app.router.add_get('/ask', ask_handler)
     app.router.add_post('/ask', ask_handler)
-    
+    app.router.add_get('/api/deep_research', deep_research_handler)
+    app.router.add_post('/api/deep_research', deep_research_handler)
+
     # Info endpoints
     app.router.add_get('/who', who_handler)
     app.router.add_get('/sites', sites_handler)
@@ -241,6 +243,94 @@ async def sites_handler(request: web.Request) -> web.Response:
             "message-type": "error",
             "error": f"Failed to get sites: {str(e)}"
         }
+        return web.json_response(error_data, status=500)
+
+
+async def deep_research_handler(request: web.Request) -> web.Response:
+    """Handle /api/deep_research endpoint for Deep Research mode with SSE streaming"""
+
+    # Get query parameters
+    query_params = dict(request.query)
+
+    # For POST requests, merge body parameters
+    if request.method == 'POST':
+        try:
+            if request.content_type == 'application/json':
+                body_data = await request.json()
+                query_params.update(body_data)
+            elif request.content_type == 'application/x-www-form-urlencoded':
+                body_data = await request.post()
+                query_params.update(dict(body_data))
+        except Exception as e:
+            logger.warning(f"Failed to parse POST body: {e}")
+
+    # Force Deep Research mode
+    query_params['generate_mode'] = 'deep_research'
+    query_params['streaming'] = 'true'  # Always use streaming for Deep Research
+
+    # Extract query
+    query = get_param(query_params, "query", str, "")
+    if not query:
+        return web.json_response({
+            "message_type": "error",
+            "error": "Missing query parameter"
+        }, status=400)
+
+    logger.info(f"Deep Research request: {query}")
+
+    try:
+        # Create SSE response with proper headers
+        response = web.StreamResponse(
+            status=200,
+            reason='OK',
+            headers={
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'X-Accel-Buffering': 'no'
+            }
+        )
+        await response.prepare(request)
+
+        # Create streaming wrapper
+        wrapper = AioHttpStreamingWrapper(request, response, query_params)
+        await wrapper.prepare_response()
+
+        # Import and create Deep Research handler
+        from methods.deep_research import DeepResearchHandler
+        handler = DeepResearchHandler(query_params, wrapper)
+
+        # Run Deep Research query (will stream progress via SSE)
+        result = await handler.runQuery()
+
+        # Send final result message
+        if result:
+            final_message = {
+                "message_type": "final_result",
+                "final_report": result.get('answer', ''),
+                "confidence_level": result.get('confidence_level', 'Medium'),
+                "methodology": result.get('methodology_note', ''),
+                "sources": result.get('sources_used', [])
+            }
+            await wrapper.write_stream(final_message)
+
+        # Close the stream
+        await wrapper.write_stream({"message_type": "complete"})
+        await response.write_eof()
+
+        return response
+
+    except Exception as e:
+        logger.error(f"Deep Research error: {e}", exc_info=True)
+        error_data = {
+            "message_type": "error",
+            "error": str(e)
+        }
+        try:
+            await wrapper.write_stream(error_data)
+            await response.write_eof()
+        except:
+            pass
         return web.json_response(error_data, status=500)
 
 

@@ -47,9 +47,8 @@ API_VERSION = "0.1"
 
 class NLWebHandler:
 
-    def __init__(self, query_params, http_handler): 
-      
-        print(query_params)
+    def __init__(self, query_params, http_handler):
+
         self.http_handler = http_handler
         self.query_params = query_params
         

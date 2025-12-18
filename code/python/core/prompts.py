@@ -220,10 +220,10 @@ def find_prompt(site, item_type, prompt_name):
     site_element = None
     prompt_element = None
     
-    logger.debug(f"Searching for site element with ref='{site}'")
+    logger.debug(f"Searching for site element with id='{site}'")
     for root_element in prompt_roots:
         for site_element in root_element.findall(SITE_TAG):
-            if site_element.get("ref") == site:
+            if site_element.get("id") == site:
                 break
     
     candidate_roots = []

@@ -512,7 +512,6 @@ class PgVectorClient(RetrievalClientBase):
                     f"SELECT url, schema_json, site, name FROM {self.table_name} WHERE url ILIKE %s",
                     (f"%{url}%",)
                 )
-                print(url)
                 row = await cur.fetchone()
                 
                 if row:

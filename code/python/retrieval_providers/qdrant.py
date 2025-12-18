@@ -195,8 +195,12 @@ class QdrantVectorClient(RetrievalClientBase):
             return client
             
         except Exception as e:
-            logger.exception(f"Failed to initialize Qdrant client: {str(e)}")
-            
+            error_msg = f"{type(e).__name__}: {str(e) if str(e) else 'No error message'}"
+            logger.error(f"Failed to initialize Qdrant client: {error_msg}")
+            logger.error(f"Exception type: {type(e)}")
+            logger.error(f"Exception args: {e.args}")
+            logger.exception("Full traceback:")
+
             # If we failed with the URL endpoint, try a fallback to local file-based storage
             if self.api_endpoint and "Connection refused" in str(e):
                 logger.info("Connection to Qdrant server failed, trying local file-based storage")
@@ -231,12 +235,16 @@ class QdrantVectorClient(RetrievalClientBase):
             bool: True if the collection exists, False otherwise
         """
         collection_name = collection_name or self.default_collection_name
-        client = await self._get_qdrant_client()
 
         try:
+            client = await self._get_qdrant_client()
+            if client is None:
+                logger.error(f"Qdrant client is None, cannot check collection existence")
+                return False
             return await client.collection_exists(collection_name)
         except Exception as e:
-            logger.error(f"Error checking if collection '{collection_name}' exists: {str(e)}")
+            logger.error(f"Error checking if collection '{collection_name}' exists: {type(e).__name__}: {str(e)}")
+            logger.exception("Full traceback:")
             return False
 
     async def _ensure_text_indexes(self, collection_name: str):
@@ -305,9 +313,13 @@ class QdrantVectorClient(RetrievalClientBase):
             bool: True if created, False if already exists
         """
         collection_name = collection_name or self.default_collection_name
-        client = await self._get_qdrant_client()
 
         try:
+            client = await self._get_qdrant_client()
+            if client is None:
+                logger.error(f"Qdrant client is None, cannot create collection")
+                raise ValueError("Qdrant client initialization failed")
+
             # Check if collection exists
             if await client.collection_exists(collection_name):
                 logger.info(f"Collection '{collection_name}' already exists")
@@ -329,7 +341,8 @@ class QdrantVectorClient(RetrievalClientBase):
             return True
 
         except Exception as e:
-            logger.error(f"Error creating collection '{collection_name}': {str(e)}")
+            logger.error(f"Error creating collection '{collection_name}': {type(e).__name__}: {str(e)}")
+            logger.exception("Full traceback:")
             # Try again if collection doesn't exist
             if "Collection not found" in str(e):
                 try:

@@ -80,7 +80,7 @@ class DeepResearchHandler(NLWebHandler):
     async def prepare(self):
         """
         Run pre-checks and retrieval.
-        Extends parent prepare() to add mode detection.
+        Extends parent prepare() to add mode detection and clarification check.
         """
         # Call parent prepare() - handles:
         # - Decontextualization
@@ -91,6 +91,14 @@ class DeepResearchHandler(NLWebHandler):
         # - Vector search with date filtering
         await super().prepare()
 
+        # Phase 4: Check if clarification is needed
+        # This happens after temporal detection, so we can check the results
+        needs_clarification = await self._check_clarification_needed()
+        if needs_clarification:
+            # Clarification request sent, early return
+            logger.info("[DEEP RESEARCH] Clarification required, waiting for user input")
+            return
+
         # Additional: Detect research mode
         self.research_mode = await self._detect_research_mode()
         logger.info(f"[DEEP RESEARCH] Mode detected: {self.research_mode.upper()}")
@@ -99,12 +107,20 @@ class DeepResearchHandler(NLWebHandler):
         """
         Detect which research mode to use based on query.
 
-        Future: Read from query_params['research_mode'] (user UI selection)
-        Current: Rule-based detection from query keywords
+        Priority 1: User UI selection (query_params['research_mode'])
+        Priority 2: Rule-based detection from query keywords
 
         Returns:
             'strict' | 'discovery' | 'monitor'
         """
+        # Priority 1: User UI selection
+        if 'research_mode' in self.query_params:
+            user_mode = self.query_params['research_mode']
+            if user_mode in ['strict', 'discovery', 'monitor']:
+                logger.info(f"[DEEP RESEARCH] Using user-selected mode: {user_mode}")
+                return user_mode
+
+        # Priority 2: Keyword detection
         query = self.query.lower()
 
         # Fact-checking indicators → strict mode
@@ -113,6 +129,7 @@ class DeepResearchHandler(NLWebHandler):
             '真的嗎', '查證', '驗證', '是真的', '確認'
         ]
         if any(kw in query for kw in fact_check_keywords):
+            logger.info("[DEEP RESEARCH] Detected strict mode from keywords")
             return 'strict'
 
         # Monitoring/tracking indicators → monitor mode
@@ -122,9 +139,11 @@ class DeepResearchHandler(NLWebHandler):
             '輿情', '變化', '趨勢', '演變', '追蹤'
         ]
         if any(kw in query for kw in monitor_keywords):
+            logger.info("[DEEP RESEARCH] Detected monitor mode from keywords")
             return 'monitor'
 
         # Default: discovery mode (general exploration)
+        logger.info("[DEEP RESEARCH] Using default discovery mode")
         return 'discovery'
 
     async def execute_deep_research(self):
@@ -168,6 +187,19 @@ class DeepResearchHandler(NLWebHandler):
         create_assistant_result(results, handler=self, send=True)
 
         logger.info(f"[DEEP RESEARCH] Sent {len(results)} results to frontend")
+
+        # Generate final report for api.py
+        final_report = self._generate_final_report(results, temporal_context)
+
+        # Update return_value with structured response
+        self.return_value.update({
+            'answer': final_report,
+            'confidence_level': self._calculate_confidence(results),
+            'methodology_note': f'Deep Research ({self.research_mode} mode)',
+            'sources_used': [item.get('url', '') for item in results if item.get('url')]
+        })
+
+        logger.info(f"[DEEP RESEARCH] Updated return_value with final report")
 
     def _get_temporal_context(self) -> Dict[str, Any]:
         """
@@ -238,3 +270,140 @@ class DeepResearchHandler(NLWebHandler):
                 "num_items_retrieved": len(items)
             }
         }]
+
+    def _generate_final_report(self, results: list, temporal_context: Dict) -> str:
+        """
+        Generate a final markdown report from research results.
+
+        Args:
+            results: List of NLWeb Item dicts from research
+            temporal_context: Temporal metadata
+
+        Returns:
+            Markdown-formatted final report
+        """
+        # Extract descriptions from results (which contain the actual content)
+        descriptions = [item.get('description', '') for item in results]
+
+        # Build final report
+        report_parts = [
+            f"# Deep Research Report: {self.query}",
+            f"\n**Research Mode:** {self.research_mode.upper()}",
+            f"\n**Sources Analyzed:** {len(results)}",
+        ]
+
+        # Add temporal context if applicable
+        if temporal_context.get('is_temporal_query'):
+            date_range = f"{temporal_context.get('start_date', 'N/A')} to {temporal_context.get('end_date', 'N/A')}"
+            report_parts.append(f"\n**Time Period:** {date_range}")
+
+        report_parts.append("\n---\n")
+
+        # Add research findings
+        for i, desc in enumerate(descriptions, 1):
+            report_parts.append(f"\n## Finding {i}\n")
+            report_parts.append(desc)
+            report_parts.append("\n")
+
+        return "\n".join(report_parts)
+
+    def _calculate_confidence(self, results: list) -> str:
+        """
+        Calculate confidence level based on research results.
+
+        Args:
+            results: List of research result items
+
+        Returns:
+            Confidence level: 'High', 'Medium', or 'Low'
+        """
+        num_results = len(results)
+
+        # Simple heuristic based on number of results
+        if num_results >= 5:
+            return 'High'
+        elif num_results >= 2:
+            return 'Medium'
+        else:
+            return 'Low'
+
+    async def _check_clarification_needed(self) -> bool:
+        """
+        Check if query needs clarification before proceeding with research.
+
+        Triggers clarification when:
+        1. Time parsing failed (None)
+        2. Low confidence in time parsing (< 0.7)
+
+        Returns:
+            True if clarification was sent (early return needed)
+            False if no clarification needed (proceed normally)
+        """
+        # Get temporal parsing result from parent's prepare()
+        temporal_range = getattr(self, 'temporal_range', None)
+
+        # Determine if clarification is needed
+        needs_clarification = False
+        ambiguity_type = "time"
+
+        if temporal_range is None:
+            # Time parsing completely failed
+            logger.info("[DEEP RESEARCH] Time parsing failed, may need clarification")
+            needs_clarification = True
+        elif temporal_range.get('confidence', 1.0) < 0.7:
+            # Low confidence in time parsing
+            logger.info(f"[DEEP RESEARCH] Low confidence time parsing ({temporal_range.get('confidence')}), may need clarification")
+            needs_clarification = True
+
+        if not needs_clarification:
+            return False
+
+        # Generate clarification options
+        try:
+            from reasoning.agents.clarification import ClarificationAgent
+
+            clarification_agent = ClarificationAgent(handler=self, timeout=30)
+            clarification_data = await clarification_agent.generate_options(
+                query=self.query,
+                ambiguity_type=ambiguity_type
+            )
+
+            # Send SSE message to frontend
+            await self._send_clarification_request(clarification_data)
+
+            # Mark query as done (early return)
+            self.query_done = True
+
+            return True
+
+        except Exception as e:
+            logger.error(f"[DEEP RESEARCH] Clarification generation failed: {e}", exc_info=True)
+            # If clarification fails, proceed with research anyway
+            return False
+
+    async def _send_clarification_request(self, clarification_data: dict):
+        """
+        Send clarification request to frontend via SSE.
+
+        Args:
+            clarification_data: Clarification options from ClarificationAgent
+        """
+        try:
+            from core.utils.message_senders import send_sse_message
+
+            message_data = {
+                "message_type": "clarification_required",
+                "clarification": clarification_data,
+                "query": self.query
+            }
+
+            await send_sse_message(
+                self.http_handler,
+                message_data,
+                stream_id=self.query_params.get('stream_id')
+            )
+
+            logger.info("[DEEP RESEARCH] Clarification request sent to frontend")
+
+        except Exception as e:
+            logger.error(f"[DEEP RESEARCH] Failed to send clarification request: {e}", exc_info=True)
