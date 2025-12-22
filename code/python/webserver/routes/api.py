@@ -303,8 +303,8 @@ async def deep_research_handler(request: web.Request) -> web.Response:
         # Run Deep Research query (will stream progress via SSE)
         result = await handler.runQuery()
 
-        # Send final result message
-        if result:
+        # Send final result message (skip if clarification is pending)
+        if result and result.get('status') != 'clarification_pending':
             final_message = {
                 "message_type": "final_result",
                 "final_report": result.get('answer', ''),

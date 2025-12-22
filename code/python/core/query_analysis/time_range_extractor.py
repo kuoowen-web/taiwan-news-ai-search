@@ -93,6 +93,25 @@ class TimeRangeExtractor:
         try:
             query = self.handler.query
 
+            # Stage 0: Check query_params for explicit time_range_start/end
+            from core.utils.utils import get_param
+            time_range_start = get_param(self.handler.query_params, "time_range_start", str, None)
+            time_range_end = get_param(self.handler.query_params, "time_range_end", str, None)
+
+            if time_range_start and time_range_end:
+                # Explicit time range provided by frontend
+                result = {
+                    'method': 'explicit_params',
+                    'is_temporal': True,
+                    'start_date': time_range_start,
+                    'end_date': time_range_end,
+                    'confidence': 1.0
+                }
+                logger.info(f"[TIME-EXTRACTOR] Explicit params: {result}")
+                self.handler.temporal_range = result
+                await self.handler.state.precheck_step_done(self.STEP_NAME)
+                return result
+
             # Stage 1: Regex Pattern Matching (fast path)
             result = self._try_regex_parsing(query)
             if result and result.get('is_temporal'):

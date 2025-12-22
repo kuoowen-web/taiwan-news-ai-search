@@ -2,6 +2,7 @@
 Deep Research Orchestrator - Coordinates the Actor-Critic reasoning loop.
 """
 
+import time
 from typing import Dict, Any, List, Optional
 from misc.logger.logging_config_helper import get_configured_logger
 from core.config import CONFIG
@@ -516,7 +517,23 @@ class DeepResearchOrchestrator:
             # Check if we have a valid draft
             if not draft:
                 self.logger.error("No draft generated after iterations")
-                return self._format_error_result(query, "Failed to generate draft")
+                # Check if this was due to continuous SEARCH_REQUIRED without results
+                if response and response.status == "SEARCH_REQUIRED":
+                    return self._format_friendly_no_data_result(
+                        query=query,
+                        mode=mode,
+                        missing_info=response.missing_information,
+                        attempted_queries=response.new_queries,
+                        reasoning_chain=response.reasoning_chain  # Include Analyst's explanation
+                    )
+                # Otherwise, generic error (include reasoning if available)
+                error_details = ""
+                if response and hasattr(response, 'reasoning_chain') and response.reasoning_chain:
+                    error_details = f"\n\n**分析過程：**\n{response.reasoning_chain}"
+                return self._format_error_result(
+                    query,
+                    f"Failed to generate draft{error_details}"
+                )
 
             # Graceful degradation check
             if reject_count >= max_iterations and review.status == "REJECT":
@@ -536,13 +553,33 @@ class DeepResearchOrchestrator:
 
             self.logger.info("Writer composing final report")
             analyst_citations = response.citations_used
-            final_report = await self.writer.compose(
-                analyst_draft=draft,
-                critic_review=review,
-                analyst_citations=analyst_citations,
-                mode=mode,
-                user_query=query
-            )
+            writer_input = {
+                "analyst_draft": draft,
+                "critic_review": review,
+                "analyst_citations": list(self.source_map.keys()),
+                "mode": mode,
+                "user_query": query
+            }
+
+            if tracer:
+                with tracer.agent_span("writer", "compose", writer_input) as span:
+                    final_report = await self.writer.compose(
+                        analyst_draft=draft,
+                        critic_review=review,
+                        analyst_citations=analyst_citations,
+                        mode=mode,
+                        user_query=query
+                    )
+                    span.set_result(final_report)
+            else:
+                final_report = await self.writer.compose(
+                    analyst_draft=draft,
+                    critic_review=review,
+                    analyst_citations=analyst_citations,
+                    mode=mode,
+                    user_query=query
+                )
+
             iteration_logger.log_agent_output(
                 iteration=iteration + 1,
                 agent_name="writer",
@@ -557,6 +594,8 @@ class DeepResearchOrchestrator:
             })
 
             # Hallucination Guard: Verify Writer sources ⊆ Analyst citations
+            invalid_sources = []
+            needs_correction = False
             if not set(final_report.sources_used).issubset(set(analyst_citations)):
                 self.logger.error(
                     f"Writer hallucination detected: {final_report.sources_used} "
@@ -564,6 +603,8 @@ class DeepResearchOrchestrator:
                 )
                 # Auto-correct: Only keep intersection (Pydantic models are immutable)
                 corrected_sources = list(set(final_report.sources_used) & set(analyst_citations))
+                invalid_sources = list(set(final_report.sources_used) - set(analyst_citations))
+                needs_correction = True
                 self.logger.warning(f"Corrected sources from {final_report.sources_used} to: {corrected_sources}")
 
                 # Create corrected version (rebuild model with corrected data)
@@ -572,6 +613,18 @@ class DeepResearchOrchestrator:
                     sources_used=corrected_sources,
                     confidence_level="Low",
                     methodology_note=final_report.methodology_note + " [自動修正：移除未驗證來源]"
+                )
+
+            # Tracing: Hallucination guard
+            if tracer:
+                tracer.condition_branch(
+                    "HALLUCINATION_GUARD",
+                    "PASSED" if not needs_correction else "CORRECTED",
+                    {
+                        "writer_sources": final_report.sources_used,
+                        "analyst_sources": list(self.source_map.keys()),
+                        "invalid_sources": invalid_sources if needs_correction else []
+                    }
                 )
 
             # Log session summary
@@ -588,10 +641,23 @@ class DeepResearchOrchestrator:
             # Phase 4: Format as NLWeb result (⚠️ pass context for source extraction)
             result = self._format_result(query, mode, final_report, iteration + 1, current_context)
             self.logger.info(f"Research completed: {iteration + 1} iterations")
+
+            # Tracing: Research end
+            total_time = time.time() - tracer.start_time if tracer else 0
+            if tracer:
+                tracer.end_research(
+                    final_status=review.status,
+                    iterations=iteration + 1,
+                    total_time=total_time
+                )
+
             return result
 
         except NoValidSourcesError as e:
             self.logger.error(f"No valid sources after filtering: {e}")
+            # Tracing: Error
+            if tracer:
+                tracer.error(f"No valid sources after filtering: {e}")
             return self._format_error_result(
                 query,
                 f"No valid sources available in {mode} mode. Try using 'discovery' mode for broader source coverage."
@@ -599,6 +665,9 @@ class DeepResearchOrchestrator:
 
         except Exception as e:
             self.logger.error(f"Unexpected error in orchestrator: {e}", exc_info=True)
+            # Tracing: Error
+            if tracer:
+                tracer.error(f"Research failed: {str(e)}", exception=e)
             return self._format_error_result(query, f"Research error: {str(e)}")
 
     def _format_result(
@@ -624,6 +693,28 @@ class DeepResearchOrchestrator:
 
         ⚠️ CRITICAL: Must match schema expected by create_assistant_result()
         """
+        # Convert ALL source_map entries to URLs (not just sources_used)
+        # This ensures [1] maps to sources[0], [15] maps to sources[14], etc.
+        source_urls = []
+        max_cid = max(self.source_map.keys()) if self.source_map else 0
+
+        for cid in range(1, max_cid + 1):
+            if cid in self.source_map:
+                item = self.source_map[cid]
+                # Handle both dict and tuple formats
+                if isinstance(item, dict):
+                    url = item.get("url") or item.get("link", "")
+                elif isinstance(item, (list, tuple)) and len(item) > 0:
+                    url = item[0]  # First element is URL in tuple format
+                else:
+                    url = ""
+                source_urls.append(url if url else "")  # Keep empty string to maintain index alignment
+            else:
+                # Missing citation ID - maintain index alignment
+                source_urls.append("")
+
+        self.logger.info(f"Converted source_map ({len(self.source_map)} items) to {len(source_urls)} URLs (max citation ID: {max_cid})")
+
         return [{
             "@type": "Item",
             "url": f"https://deep-research.internal/{mode}/{query[:50]}",
@@ -636,10 +727,84 @@ class DeepResearchOrchestrator:
                 "@type": "ResearchReport",
                 "mode": mode,
                 "iterations": iterations,
-                "sources_used": final_report.sources_used,
+                "sources_used": source_urls,  # Now contains actual URLs instead of citation IDs
                 "confidence": final_report.confidence_level,
                 "methodology": final_report.methodology_note,
                 "total_sources_analyzed": len(context)
+            }
+        }]
+
+    def _format_friendly_no_data_result(
+        self,
+        query: str,
+        mode: str,
+        missing_info: List[str],
+        attempted_queries: List[str],
+        reasoning_chain: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Format a user-friendly response when no relevant data is found.
+
+        Args:
+            query: User's query
+            mode: Research mode
+            missing_info: List of missing information identified by Analyst
+            attempted_queries: List of supplementary queries that were attempted
+            reasoning_chain: Optional detailed reasoning from Analyst
+
+        Returns:
+            List with single NLWeb Item dict with friendly no-data message
+        """
+        # Build friendly description
+        description_parts = [
+            f"# 抱歉，目前找不到關於「{query}」的相關資料\n",
+            f"## 搜尋說明\n",
+            f"我們已經在 **{mode.upper()} 模式**下進行了深度搜尋，但資料庫中沒有找到符合條件的新聞或資料。\n"
+        ]
+
+        if missing_info:
+            description_parts.append("\n### 缺少的關鍵資訊：\n")
+            for info in missing_info:
+                description_parts.append(f"- {info}\n")
+
+        if attempted_queries:
+            description_parts.append("\n### 已嘗試的補充搜尋：\n")
+            for q in attempted_queries:
+                description_parts.append(f"- `{q}`\n")
+
+        # Add detailed reasoning if available (optional, for transparency)
+        if reasoning_chain:
+            description_parts.append("\n---\n")
+            description_parts.append("\n<details>\n<summary>📊 詳細分析過程（點擊展開）</summary>\n\n")
+            description_parts.append(reasoning_chain)
+            description_parts.append("\n</details>\n")
+
+        description_parts.extend([
+            "\n---\n",
+            "\n## 建議您可以：\n",
+            "1. **調整關鍵字**：嘗試使用不同的詞彙或更廣泛的搜尋詞\n",
+            "2. **擴大時間範圍**：如果您指定了特定日期，可以嘗試更寬的時間範圍\n",
+            "3. **更改搜尋模式**：\n",
+            "   - 使用 `mode=discovery` 來搜尋更廣泛的來源\n",
+            "   - 使用 `site=all` 來搜尋所有網站\n",
+            "4. **確認資料可用性**：有些資訊可能尚未被收錄到資料庫中\n",
+            "\n有其他想了解的內容嗎？"
+        ])
+
+        return [{
+            "@type": "Item",
+            "url": "https://deep-research.internal/no-data",
+            "name": f"找不到相關資料：{query}",
+            "site": "Deep Research Module",
+            "siteUrl": "https://deep-research.internal",
+            "score": 0,
+            "description": "".join(description_parts),
+            "schema_object": {
+                "@type": "NoDataReport",
+                "query": query,
+                "mode": mode,
+                "missing_information": missing_info,
+                "attempted_queries": attempted_queries
             }
         }]
 

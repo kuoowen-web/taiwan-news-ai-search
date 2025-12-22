@@ -458,46 +458,52 @@ class NLWebHandler:
                 # Pre-filter by date for temporal queries using parsed time range
                 if temporal_range and temporal_range.get('is_temporal') and len(items) > 0:
                     # Use precise date filtering from parsed range
-                    cutoff_date = datetime.strptime(temporal_range['start_date'], '%Y-%m-%d')
-                    cutoff_date = cutoff_date.replace(tzinfo=timezone.utc)
-                    filtered_items = []
-
-                    for item in items:
-                        # Handle both 4-tuple and 5-tuple (with vector) formats
-                        if len(item) == 5:
-                            url, json_str, name, site, vector = item
-                        else:
-                            url, json_str, name, site = item
-                            vector = None
-                        try:
-                            schema_obj = json.loads(json_str)
-                            date_published = schema_obj.get('datePublished', 'Unknown')
-
-                            if date_published != 'Unknown':
-                                # Parse date
-                                date_str = date_published.split('T')[0] if 'T' in date_published else date_published
-                                pub_date = datetime.strptime(date_str, '%Y-%m-%d')
-                                pub_date = pub_date.replace(tzinfo=timezone.utc)
-
-                                # Keep only articles within the parsed time range
-                                if pub_date >= cutoff_date:
-                                    if vector is not None:
-                                        filtered_items.append([url, json_str, name, site, vector])
-                                    else:
-                                        filtered_items.append([url, json_str, name, site])
-                        except Exception as e:
-                            # If we can't parse the date, skip this article for temporal queries
-                            logger.debug(f"Could not parse date for temporal filtering: {e}")
-                            pass
-
-                    # If we filtered too aggressively, take top 50 anyway
-                    days = temporal_range.get('relative_days') or 365
-                    if len(filtered_items) < 50:
-                        logger.info(f"[TEMPORAL] Only {len(filtered_items)} articles found in last {days} days, using all {len(items)} retrieved")
-                        self.final_retrieved_items = items[:80]
+                    start_date_str = temporal_range.get('start_date')
+                    if not start_date_str:
+                        logger.warning(f"[TEMPORAL] temporal_range marked as temporal but missing start_date: {temporal_range}")
+                        # Skip filtering if start_date is missing
+                        self.final_retrieved_items = items
                     else:
-                        logger.info(f"[TEMPORAL] Filtered {len(items)} → {len(filtered_items)} articles (last {days} days)")
-                        self.final_retrieved_items = filtered_items[:80]
+                        cutoff_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+                        cutoff_date = cutoff_date.replace(tzinfo=timezone.utc)
+                        filtered_items = []
+
+                        for item in items:
+                            # Handle both 4-tuple and 5-tuple (with vector) formats
+                            if len(item) == 5:
+                                url, json_str, name, site, vector = item
+                            else:
+                                url, json_str, name, site = item
+                                vector = None
+                            try:
+                                schema_obj = json.loads(json_str)
+                                date_published = schema_obj.get('datePublished', 'Unknown')
+
+                                if date_published != 'Unknown':
+                                    # Parse date
+                                    date_str = date_published.split('T')[0] if 'T' in date_published else date_published
+                                    pub_date = datetime.strptime(date_str, '%Y-%m-%d')
+                                    pub_date = pub_date.replace(tzinfo=timezone.utc)
+
+                                    # Keep only articles within the parsed time range
+                                    if pub_date >= cutoff_date:
+                                        if vector is not None:
+                                            filtered_items.append([url, json_str, name, site, vector])
+                                        else:
+                                            filtered_items.append([url, json_str, name, site])
+                            except Exception as e:
+                                # If we can't parse the date, skip this article for temporal queries
+                                logger.debug(f"Could not parse date for temporal filtering: {e}")
+                                pass
+
+                        # If we filtered too aggressively, take top 50 anyway
+                        days = temporal_range.get('relative_days') or 365
+                        if len(filtered_items) < 50:
+                            logger.info(f"[TEMPORAL] Only {len(filtered_items)} articles found in last {days} days, using all {len(items)} retrieved")
+                            self.final_retrieved_items = items[:80]
+                        else:
+                            logger.info(f"[TEMPORAL] Filtered {len(items)} → {len(filtered_items)} articles (last {days} days)")
+                            self.final_retrieved_items = filtered_items[:80]
                 else:
                     self.final_retrieved_items = items
 

@@ -117,8 +117,9 @@ class ClarificationAgent(BaseReasoningAgent):
             response = await ask_llm(
                 prompt,
                 response_structure,
-                level="medium",  # Use medium-cost model for clarification
-                query_params=self.handler.query_params
+                level="low",  # Use low-cost model for clarification (medium not available in ModelConfig)
+                query_params=self.handler.query_params,
+                max_length=1024  # Increase token limit for clarification options
             )
 
             if response and isinstance(response, dict):

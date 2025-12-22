@@ -1141,6 +1141,22 @@
             0%, 100% { transform: scale(1.05); }
             50% { transform: scale(1.1); }
         }
+
+        /* Citation Links */
+        .citation-link {
+            color: #2563eb;
+            text-decoration: none;
+            font-weight: 600;
+            padding: 0 2px;
+            transition: all 0.2s;
+            border-bottom: 1px solid transparent;
+        }
+
+        .citation-link:hover {
+            color: #1d4ed8;
+            border-bottom-color: #1d4ed8;
+            background: #eff6ff;
+        }
     </style>
 </head>
 <body>
@@ -2283,6 +2299,10 @@
                                 currentConversationId = data.conversation_id;
                                 console.log('[Deep Research] Using backend conversation_id:', currentConversationId);
                             }
+                        } else if (data.message_type === 'clarification_required') {
+                            // Phase 4: Clarification needed before proceeding
+                            console.log('[Clarification] Request received:', data.clarification);
+                            showClarificationModal(data.clarification, data.query, eventSource);
                         } else if (data.message_type === 'intermediate_result') {
                             // Progress update - show reasoning progress
                             updateReasoningProgress(data);
@@ -2327,6 +2347,25 @@
             }
         }
 
+        // Helper function to convert citation numbers [1] to clickable links
+        function addCitationLinks(htmlContent, sources) {
+            if (!sources || sources.length === 0) {
+                return htmlContent;
+            }
+
+            // Replace [1], [2], etc. with clickable links (handles both single [1] and consecutive [3][4][23])
+            return htmlContent.replace(/\[(\d+)\]/g, (match, num) => {
+                const index = parseInt(num) - 1;
+                if (index >= 0 && index < sources.length) {
+                    const url = sources[index];
+                    if (url) {  // Only create link if URL is not empty
+                        return `<a href="${url}" target="_blank" class="citation-link" title="來源 ${num}">[${num}]</a>`;
+                    }
+                }
+                return match; // Keep original if index out of range or URL is empty
+            });
+        }
+
         function displayDeepResearchResults(report, metadata, savedQuery) {
             console.log('[Deep Research] Displaying results');
 
@@ -2340,7 +2379,16 @@
             const reportContainer = document.createElement('div');
             reportContainer.className = 'deep-research-report';
             reportContainer.style.cssText = 'padding: 20px; max-width: 900px; margin: 0 auto;';
-            reportContainer.innerHTML = marked.parse(report || '無結果');
+
+            // Convert markdown to HTML
+            let reportHTML = marked.parse(report || '無結果');
+
+            // Add citation links if sources are available
+            if (metadata && metadata.sources && metadata.sources.length > 0) {
+                reportHTML = addCitationLinks(reportHTML, metadata.sources);
+            }
+
+            reportContainer.innerHTML = reportHTML;
 
             listView.appendChild(reportContainer);
 
@@ -3144,15 +3192,17 @@
                 // Store the time_range in query_params for backend
                 // This will be picked up by the handler
                 const base = window.location.origin;
-                const deepResearchUrl = new URL('/api/query', base);
+                const deepResearchUrl = new URL('/api/deep_research', base);  // Corrected endpoint
                 deepResearchUrl.searchParams.append('query', clarifiedQuery);
-                deepResearchUrl.searchParams.append('mode', 'generate');
-                deepResearchUrl.searchParams.append('stream', 'true');
+                deepResearchUrl.searchParams.append('site', 'all');
+                deepResearchUrl.searchParams.append('research_mode', currentResearchMode);
+                deepResearchUrl.searchParams.append('max_iterations', '3');
+                deepResearchUrl.searchParams.append('skip_clarification', 'true');  // Skip clarification check
 
-                // Add time_range as JSON if available
-                if (timeRange) {
-                    deepResearchUrl.searchParams.append('time_range_start', timeRange.start || '');
-                    deepResearchUrl.searchParams.append('time_range_end', timeRange.end || '');
+                // Add time_range as JSON if available (only if both start and end exist)
+                if (timeRange && timeRange.start && timeRange.end) {
+                    deepResearchUrl.searchParams.append('time_range_start', timeRange.start);
+                    deepResearchUrl.searchParams.append('time_range_end', timeRange.end);
                 }
 
                 if (currentConversationId) {
