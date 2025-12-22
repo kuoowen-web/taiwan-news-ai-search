@@ -344,10 +344,8 @@ class DeepResearchHandler(NLWebHandler):
         """
         Check if query needs clarification before proceeding with research.
 
-        Three-phase detection:
-        1. Time ambiguity (existing logic)
-        2. Scope ambiguity (new - LLM detection)
-        3. Entity ambiguity (new - LLM detection)
+        Single LLM call to detect all ambiguities (time, scope, entity).
+        Returns conversational clarification questions.
 
         Returns:
             True if clarification was sent (early return needed)
@@ -358,341 +356,289 @@ class DeepResearchHandler(NLWebHandler):
             logger.info("[DEEP RESEARCH] Skipping clarification check (user already clarified)")
             return False
 
-        # Phase 1: Time ambiguity (existing logic - keep unchanged)
-        temporal_range = getattr(self, 'temporal_range', None)
-        needs_clarification = False
-        ambiguity_type = "time"
+        # Single LLM call to detect all ambiguities
+        questions = await self._detect_all_ambiguities()
 
+        if questions:
+            # Format as multi-dimensional parallel clarification
+            clarification_data = {
+                "query": self.query,
+                "questions": questions,
+                "instruction": "為了精準搜尋，請選擇以下條件",
+                "submit_label": "開始搜尋"
+            }
+
+            # Send to frontend (render in conversation)
+            await self._send_clarification_request(clarification_data)
+
+            self.query_done = True
+            return True
+
+        return False
+
+    async def _detect_all_ambiguities(self) -> list:
+        """
+        Single LLM call to detect all ambiguities (time, scope, entity).
+
+        Returns:
+            List of question dicts, each with options. Empty list if no ambiguities.
+
+        Example return:
+        [
+            {
+                "question_id": "q1",
+                "clarification_type": "scope",
+                "question": "AI發展涵蓋多個面向，你最想了解哪個部分？",
+                "options": [
+                    {"id": "1a", "label": "技術突破", "intent": "technology"}
+                ]
+            }
+        ]
+        """
+        from core.llm import ask_llm
+
+        # Get temporal context for rule-based time ambiguity check
+        temporal_range = getattr(self, 'temporal_range', None)
+        has_time_ambiguity = self._check_time_ambiguity_rules(temporal_range)
+
+        prompt = f"""你是一個新聞搜尋查詢歧義分析助手。請分析以下查詢是否存在歧義，並生成**多維度並行澄清問題**。
+
+**語境**：這是一個新聞搜尋系統，用戶想找相關新聞報導。
+
+使用者查詢：「{self.query}」
+
+時間解析結果：{temporal_range}
+規則檢測：{"需要時間澄清" if has_time_ambiguity else "無時間歧義"}
+
+**核心指令 - 多維度並行檢測**：
+我們希望在**單次交互**中解決所有可能的歧義。
+如果查詢同時存在「時間不明」和「範圍過廣」的問題，請**務必同時返回**這兩個問題。
+不要只返回其中一個，也不要分多次問。
+
+請檢測以下三種歧義類型：
+
+1. **時間歧義 (time)**：
+   - 查詢涉及時間敏感的人物、政策、事件，但未指定時間範圍
+   - 例如：「蔡英文的兩岸政策」（任期內 vs 卸任後？）
+   - **必須提供「全面回顧」選項**，讓用戶可以選擇不限定時間
+
+2. **範圍歧義 (scope)**：
+   - 查詢過於廣泛，涵蓋多個**新聞主題面向**（技術、政策、經濟、社會等）
+   - **注意**：scope 是指大方向主題，不是功能細節或服務項目
+   - 例如：「AI發展」（技術突破 vs 產業應用 vs 倫理問題？）
+   - 例如：「momo科技」（財報營運 vs 產品服務 vs 市場競爭？）
+   - **必須提供「全面了解」選項**，讓用戶可以選擇不限定範圍
+
+3. **實體歧義 (entity)**：
+   - 查詢中的實體有**多個不同的實體對象**（不同國家/組織/人物）
+   - 例如：「晶片法案」（美國 CHIPS Act vs 歐盟晶片法案 - 這是兩個不同法案）
+   - **注意**：如果是明確的專有名詞或品牌，即使有地區差異也不算歧義
+
+**判斷標準**：
+- **Time & Scope 經常並存**：像「蔡英文兩岸政策」同時有時間和範圍歧義，請同時列出
+- **明確的專有名詞不澄清**：「台積電」、「ChatGPT」等（但「momo科技」有範圍歧義）
+- **從新聞價值角度思考**：選項應該對應不同的新聞報導角度
+- 每個問題提供 2-4 個具體選項 + 1 個「全面」選項
+- 使用**對話式語氣**，問題要簡短清晰
+
+請返回 JSON 格式（**重要**：每個 option 必須包含 query_modifier 欄位）：
+{{
+  "questions": [
+    {{
+      "clarification_type": "scope",
+      "question": "AI發展涵蓋多個面向，你最想了解哪個部分？",
+      "required": true,
+      "options": [
+        {{"label": "技術突破", "intent": "technology", "query_modifier": "技術突破面向"}},
+        {{"label": "產業應用", "intent": "business", "query_modifier": "產業應用面向"}},
+        {{"label": "倫理影響", "intent": "ethics", "query_modifier": "倫理影響面向"}},
+        {{"label": "全面了解", "intent": "comprehensive", "query_modifier": "", "is_comprehensive": true}}
+      ]
+    }}
+  ]
+}}
+
+**欄位說明**：
+- `query_modifier`: 用於組合自然語言查詢的修飾詞（空字串表示全面性選項）
+- `is_comprehensive`: 標記為全面性選項（選此項時會提高搜尋多元性）
+- `required`: 所有問題都必須設為 true
+
+如果沒有歧義，返回：
+{{
+  "questions": []
+}}
+
+範例 1 - **Time + Scope 並存**（最重要的案例）：
+查詢：「蔡英文兩岸政策」
+{{
+  "questions": [
+    {{
+      "clarification_type": "time",
+      "question": "請問是指哪個時期？",
+      "required": true,
+      "options": [
+        {{"label": "任期內(2016-2024)", "intent": "term_period", "query_modifier": "任期內"}},
+        {{"label": "卸任後(2024至今)", "intent": "post_term", "query_modifier": "卸任後"}},
+        {{"label": "全面回顧", "intent": "comprehensive_time", "query_modifier": "", "is_comprehensive": true}}
+      ]
+    }},
+    {{
+      "clarification_type": "scope",
+      "question": "關注哪個政策面向？",
+      "required": true,
+      "options": [
+        {{"label": "軍事國防", "intent": "defense", "query_modifier": "軍事國防面向"}},
+        {{"label": "外交關係", "intent": "diplomacy", "query_modifier": "外交關係面向"}},
+        {{"label": "經貿交流", "intent": "economy", "query_modifier": "經貿交流面向"}},
+        {{"label": "全面了解", "intent": "comprehensive_scope", "query_modifier": "", "is_comprehensive": true}}
+      ]
+    }}
+  ]
+}}
+
+範例 2 - Scope 歧義：
+查詢：「momo科技」
+{{
+  "questions": [
+    {{
+      "clarification_type": "scope",
+      "question": "你想了解 momo (富邦媒) 的哪類新聞？",
+      "required": true,
+      "options": [
+        {{"label": "營運財報與股價", "intent": "business", "query_modifier": "營運財報面向"}},
+        {{"label": "產品服務發展", "intent": "product", "query_modifier": "產品服務面向"}},
+        {{"label": "市場競爭態勢", "intent": "market", "query_modifier": "市場競爭面向"}},
+        {{"label": "全面了解", "intent": "comprehensive", "query_modifier": "", "is_comprehensive": true}}
+      ]
+    }}
+  ]
+}}
+
+範例 3 - Entity 歧義：
+查詢：「晶片法案」
+{{
+  "questions": [
+    {{
+      "clarification_type": "entity",
+      "question": "「晶片法案」在多個國家/地區都有，你想了解哪一個？",
+      "required": true,
+      "options": [
+        {{"label": "美國 CHIPS Act", "intent": "us", "query_modifier": "美國"}},
+        {{"label": "歐盟晶片法案", "intent": "eu", "query_modifier": "歐盟"}},
+        {{"label": "台灣半導體政策", "intent": "taiwan", "query_modifier": "台灣"}}
+      ]
+    }}
+  ]
+}}
+
+範例 4 - 無歧義（明確專有名詞）：
+查詢：「台積電3nm製程良率」
+{{
+  "questions": []
+}}
+理由：台積電是明確專有名詞，且查詢已經具體到製程技術，不需要澄清。
+
+範例 5 - 無歧義（查詢已經足夠具體）：
+查詢：「美中貿易戰對台灣半導體產業的影響」
+{{
+  "questions": []
+}}
+理由：查詢已經明確指定了範圍（台灣半導體產業），不需要再問。
+
+請針對上述查詢進行判斷。"""
+
+        response_structure = {
+            "questions": [
+                {
+                    "clarification_type": "string - time | scope | entity",
+                    "question": "string - 對話式問題",
+                    "required": "boolean - 必須為 true",
+                    "options": [
+                        {
+                            "label": "string - 選項文字",
+                            "intent": "string - 系統內部標籤",
+                            "query_modifier": "string - 用於組合查詢的修飾詞（空字串表示全面性選項）",
+                            "is_comprehensive": "boolean - 可選，標記為全面性選項"
+                        }
+                    ]
+                }
+            ]
+        }
+
+        try:
+            response = await ask_llm(
+                prompt,
+                response_structure,
+                level="low",
+                query_params=self.query_params,
+                max_length=1536  # Increased for multiple questions
+            )
+
+            questions = response.get('questions', [])
+
+            if questions:
+                # Add question_id and option IDs
+                for i, q in enumerate(questions, 1):
+                    q['question_id'] = f"q{i}"
+                    # Add option IDs (1a, 1b, 1c...)
+                    for j, opt in enumerate(q.get('options', []), 1):
+                        opt['id'] = f"{i}{chr(96+j)}"  # 1a, 1b, 1c...
+
+                logger.info(f"[AMBIGUITY] Detected {len(questions)} ambiguities")
+                return questions
+            else:
+                logger.info("[AMBIGUITY] No ambiguities detected")
+                return []
+
+        except Exception as e:
+            logger.error(f"[AMBIGUITY] Detection failed: {e}", exc_info=True)
+            return []
+
+    def _check_time_ambiguity_rules(self, temporal_range) -> bool:
+        """
+        Rule-based time ambiguity check (preserving existing logic).
+        Returns True if time ambiguity detected.
+
+        Args:
+            temporal_range: Temporal parsing result from parent handler
+
+        Returns:
+            True if time clarification needed, False otherwise
+        """
         # Check 1: Explicit time parsing issues
         if temporal_range is None:
-            # Time parsing completely failed
-            logger.info("[DEEP RESEARCH] Time parsing failed, may need clarification")
-            needs_clarification = True
+            logger.info("[TIME RULES] Time parsing failed, needs clarification")
+            return True
         elif temporal_range.get('confidence', 1.0) < 0.7:
-            # Low confidence in time parsing
-            logger.info(f"[DEEP RESEARCH] Low confidence time parsing ({temporal_range.get('confidence')}), may need clarification")
-            needs_clarification = True
+            logger.info(f"[TIME RULES] Low confidence parsing ({temporal_range.get('confidence')}), needs clarification")
+            return True
 
-        # Check 2: Semantic temporal ambiguity (queries about people, policies, events without explicit time)
-        # Even if time parser didn't detect explicit dates, some queries inherently need time context
+        # Check 2: Semantic temporal ambiguity
         elif not temporal_range.get('is_temporal', False):
-            # Check if query mentions time-sensitive entities without time specification
             query_lower = self.query.lower()
             temporal_ambiguity_indicators = [
-                # Political figures and their policies (tenure vs post-tenure)
+                # Political figures and their policies
                 ('蔡英文', ['政策', '兩岸', '外交', '立場', '主張']),
                 ('賴清德', ['政策', '兩岸', '外交', '立場', '主張']),
                 ('馬英九', ['政策', '兩岸', '外交', '立場', '主張']),
                 # Events that span time or evolve
-                ('發展', None),  # "AI發展" - past vs present vs future?
-                ('趨勢', None),  # Inherently temporal
+                ('發展', None),
+                ('趨勢', None),
                 ('演變', None),
                 ('變化', None),
             ]
 
             for entity, context_words in temporal_ambiguity_indicators:
                 if entity in query_lower:
-                    # If context words specified, check for them
                     if context_words:
                         if any(word in query_lower for word in context_words):
-                            logger.info(f"[DEEP RESEARCH] Semantic temporal ambiguity detected: '{entity}' with context")
-                            needs_clarification = True
-                            break
+                            logger.info(f"[TIME RULES] Semantic ambiguity: '{entity}' with context")
+                            return True
                     else:
-                        # Entity itself is ambiguous
-                        logger.info(f"[DEEP RESEARCH] Semantic temporal ambiguity detected: '{entity}'")
-                        needs_clarification = True
-                        break
-
-        # If time ambiguity detected, generate options and return
-        if needs_clarification:
-            try:
-                from reasoning.agents.clarification import ClarificationAgent
-
-                clarification_agent = ClarificationAgent(handler=self, timeout=30)
-                clarification_data = await clarification_agent.generate_options(
-                    query=self.query,
-                    ambiguity_type=ambiguity_type
-                )
-
-                # Send SSE message to frontend
-                await self._send_clarification_request(clarification_data)
-
-                # Mark query as done (early return)
-                self.query_done = True
-
-                return True
-
-            except Exception as e:
-                logger.error(f"[DEEP RESEARCH] Time clarification generation failed: {e}", exc_info=True)
-                # If clarification fails, proceed with research anyway
-                return False
-
-        # Phase 2: Scope ambiguity (new - LLM detection)
-        needs_scope_clarification, scope_data = await self._check_scope_ambiguity()
-        if needs_scope_clarification:
-            await self._send_clarification_request(scope_data)
-            self.query_done = True
-            return True
-
-        # Phase 3: Entity ambiguity (new - LLM detection)
-        needs_entity_clarification, entity_data = await self._check_entity_ambiguity()
-        if needs_entity_clarification:
-            await self._send_clarification_request(entity_data)
-            self.query_done = True
-            return True
+                        logger.info(f"[TIME RULES] Semantic ambiguity: '{entity}'")
+                        return True
 
         return False
-
-    async def _check_scope_ambiguity(self) -> Tuple[bool, Optional[Dict]]:
-        """
-        Use LLM to detect if the query is too broad and needs scope clarification.
-
-        Returns:
-            (needs_clarification, clarification_data)
-        """
-        from core.llm import ask_llm
-
-        prompt = f"""你是一個查詢範圍分析助手。
-
-使用者查詢：「{self.query}」
-
-請判斷這個查詢是否**過於廣泛**，需要拆分成子主題。
-
-判斷標準：
-1. 查詢涵蓋多個面向（技術、政策、經濟、社會等）
-2. 單一答案無法全面回答
-3. 拆分後用戶能更精準找到所需資訊
-
-**重要**：
-- 如果查詢已經足夠具體（例如：「台積電3nm製程技術」），返回 needs_clarification: false
-- 如果查詢包含明確時間（例如：「2024年AI發展」），仍可能需要範圍澄清（技術？應用？倫理？）
-- 如果查詢是簡單事實查詢（例如：「今天天氣」），返回 needs_clarification: false
-
-請返回 JSON 格式：
-{{
-  "needs_clarification": true/false,
-  "reasoning": "簡短說明判斷原因（1-2句話）",
-  "clarification_data": {{
-    "clarification_type": "scope",
-    "context_hint": "這個主題涵蓋多個面向，請選擇你最感興趣的部分：",
-    "options": [
-      {{"label": "子主題1", "intent": "subtopic1", "description": "簡短說明"}},
-      {{"label": "子主題2", "intent": "subtopic2", "description": "簡短說明"}},
-      {{"label": "子主題3", "intent": "subtopic3", "description": "簡短說明"}},
-      {{"label": "全面概述（所有面向）", "intent": "comprehensive", "description": "涵蓋所有相關面向"}}
-    ],
-    "fallback_suggestion": "或者你可以直接指定，例如「AI在醫療的應用」"
-  }}
-}}
-
-範例 1 - 需要澄清：
-查詢：「AI發展」
-回應：
-{{
-  "needs_clarification": true,
-  "reasoning": "AI發展涵蓋技術、應用、倫理、政策等多個面向，需要澄清用戶關注點",
-  "clarification_data": {{
-    "clarification_type": "scope",
-    "context_hint": "AI發展包含多個面向，請選擇你最感興趣的：",
-    "options": [
-      {{"label": "技術突破與研究進展", "intent": "technology", "description": "大模型、演算法創新等"}},
-      {{"label": "產業應用與商業影響", "intent": "business", "description": "企業導入、市場趨勢等"}},
-      {{"label": "倫理與社會影響", "intent": "ethics", "description": "AI安全、隱私、就業影響等"}},
-      {{"label": "全面概述（所有面向）", "intent": "comprehensive", "description": "技術、應用、倫理的綜合分析"}}
-    ],
-    "fallback_suggestion": "或者你可以具體化查詢，例如「AI在醫療診斷的應用」"
-  }}
-}}
-
-範例 2 - 不需澄清：
-查詢：「台積電3nm製程良率」
-回應：
-{{
-  "needs_clarification": false,
-  "reasoning": "查詢已經非常具體，聚焦在特定公司的特定技術指標"
-}}
-
-範例 3 - 不需澄清：
-查詢：「今天台北天氣」
-回應：
-{{
-  "needs_clarification": false,
-  "reasoning": "簡單事實查詢，不需拆分子主題"
-}}
-
-請針對上述查詢進行判斷。"""
-
-        response_structure = {
-            "needs_clarification": "boolean",
-            "reasoning": "string",
-            "clarification_data": {
-                "clarification_type": "string",
-                "context_hint": "string",
-                "options": [
-                    {
-                        "label": "string",
-                        "intent": "string",
-                        "description": "string"
-                    }
-                ],
-                "fallback_suggestion": "string"
-            }
-        }
-
-        try:
-            response = await ask_llm(
-                prompt,
-                response_structure,
-                level="low",
-                query_params=self.query_params,
-                max_length=1024
-            )
-
-            if response and response.get('needs_clarification'):
-                logger.info(f"[SCOPE AMBIGUITY] Detected: {response.get('reasoning')}")
-                return True, response.get('clarification_data')
-            else:
-                logger.info(f"[SCOPE AMBIGUITY] Not needed: {response.get('reasoning')}")
-                return False, None
-
-        except Exception as e:
-            logger.error(f"[SCOPE AMBIGUITY] LLM check failed: {e}", exc_info=True)
-            return False, None
-
-    async def _check_entity_ambiguity(self) -> Tuple[bool, Optional[Dict]]:
-        """
-        Use LLM to detect if the query contains ambiguous entities.
-
-        Returns:
-            (needs_clarification, clarification_data)
-        """
-        from core.llm import ask_llm
-
-        prompt = f"""你是一個實體歧義分析助手。
-
-使用者查詢：「{self.query}」
-
-請判斷這個查詢中是否包含**有歧義的實體**（人名、組織、政策、事件等）。
-
-判斷標準：
-1. 同一名稱指涉多個不同實體（例如：「晶片法案」可能是美國、歐盟、台灣）
-2. 查詢中**沒有明確指定**地區、國家、時間等限定詞
-3. 不同實體之間有實質差異，用戶需要選擇
-
-**重要**：
-- 如果查詢已經指定地區（例如：「美國晶片法案」），返回 needs_clarification: false
-- 如果實體沒有歧義（例如：「台積電」只有一家），返回 needs_clarification: false
-- 如果是專有名詞且廣為人知（例如：「ChatGPT」），返回 needs_clarification: false
-- 最多提供 3-4 個最相關的選項，不要列出所有可能性
-
-請返回 JSON 格式：
-{{
-  "needs_clarification": true/false,
-  "reasoning": "簡短說明判斷原因（1-2句話）",
-  "clarification_data": {{
-    "clarification_type": "entity",
-    "context_hint": "「實體名稱」有多個可能的指涉對象，請選擇：",
-    "options": [
-      {{"label": "選項1描述", "intent": "entity1", "region": "地區/國家", "description": "補充說明"}},
-      {{"label": "選項2描述", "intent": "entity2", "region": "地區/國家", "description": "補充說明"}},
-      {{"label": "選項3描述", "intent": "entity3", "region": "地區/國家", "description": "補充說明"}}
-    ],
-    "fallback_suggestion": "或者你可以明確指定，例如「美國的晶片法案」"
-  }}
-}}
-
-範例 1 - 需要澄清：
-查詢：「晶片法案」
-回應：
-{{
-  "needs_clarification": true,
-  "reasoning": "晶片法案在多個國家/地區都有推行，查詢未指定地區",
-  "clarification_data": {{
-    "clarification_type": "entity",
-    "context_hint": "「晶片法案」在多個國家/地區都有推行，請選擇：",
-    "options": [
-      {{"label": "美國晶片與科學法案 (CHIPS Act)", "intent": "us_chips_act", "region": "美國", "description": "2022年通過，520億美元補助半導體製造"}},
-      {{"label": "歐盟晶片法案 (EU Chips Act)", "intent": "eu_chips_act", "region": "歐盟", "description": "430億歐元投資，目標2030年市占率20%"}},
-      {{"label": "台灣半導體投資政策", "intent": "taiwan_chips", "region": "台灣", "description": "產創條例、租稅優惠等"}}
-    ],
-    "fallback_suggestion": "或者你可以明確指定，例如「美國晶片法案的影響」"
-  }}
-}}
-
-範例 2 - 不需澄清：
-查詢：「美國晶片法案」
-回應：
-{{
-  "needs_clarification": false,
-  "reasoning": "查詢已明確指定「美國」，實體無歧義"
-}}
-
-範例 3 - 不需澄清：
-查詢：「台積電3nm製程」
-回應：
-{{
-  "needs_clarification": false,
-  "reasoning": "台積電是唯一實體，無歧義"
-}}
-
-範例 4 - 需要澄清：
-查詢：「央行升息政策」
-回應：
-{{
-  "needs_clarification": true,
-  "reasoning": "未指定國家，各國央行政策差異大",
-  "clarification_data": {{
-    "clarification_type": "entity",
-    "context_hint": "「央行」可能指不同國家的中央銀行，請選擇：",
-    "options": [
-      {{"label": "台灣中央銀行", "intent": "taiwan_cbc", "region": "台灣", "description": "台灣的貨幣政策"}},
-      {{"label": "美國聯邦準備系統 (Fed)", "intent": "us_fed", "region": "美國", "description": "美國的貨幣政策"}},
-      {{"label": "歐洲中央銀行 (ECB)", "intent": "eu_ecb", "region": "歐盟", "description": "歐元區的貨幣政策"}}
-    ],
-    "fallback_suggestion": "或者你可以明確指定，例如「台灣央行的升息政策」"
-  }}
-}}
-
-請針對上述查詢進行判斷。"""
-
-        response_structure = {
-            "needs_clarification": "boolean",
-            "reasoning": "string",
-            "clarification_data": {
-                "clarification_type": "string",
-                "context_hint": "string",
-                "options": [
-                    {
-                        "label": "string",
-                        "intent": "string",
-                        "region": "string",
-                        "description": "string"
-                    }
-                ],
-                "fallback_suggestion": "string"
-            }
-        }
-
-        try:
-            response = await ask_llm(
-                prompt,
-                response_structure,
-                level="low",
-                query_params=self.query_params,
-                max_length=1024
-            )
-
-            if response and response.get('needs_clarification'):
-                logger.info(f"[ENTITY AMBIGUITY] Detected: {response.get('reasoning')}")
-                return True, response.get('clarification_data')
-            else:
-                logger.info(f"[ENTITY AMBIGUITY] Not needed: {response.get('reasoning')}")
-                return False, None
-
-        except Exception as e:
-            logger.error(f"[ENTITY AMBIGUITY] LLM check failed: {e}", exc_info=True)
-            return False, None
 
     async def _send_clarification_request(self, clarification_data: dict):
         """

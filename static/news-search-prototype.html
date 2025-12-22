@@ -419,6 +419,115 @@
             border-left: 3px solid #2563eb;
         }
 
+        /* Multi-dimensional Parallel Clarification Styles */
+        .chat-message.clarification .chat-message-bubble {
+            max-width: 90%;
+            background: transparent;
+            border: none;
+            padding: 0;
+        }
+
+        .clarification-card {
+            background: #fffbeb;
+            border: 2px solid #fbbf24;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 0;
+        }
+
+        .clarification-header {
+            font-size: 16px;
+            font-weight: 600;
+            color: #92400e;
+            margin-bottom: 20px;
+            line-height: 1.5;
+        }
+
+        .question-block {
+            margin-bottom: 20px;
+        }
+
+        .question-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+            font-weight: 500;
+            color: #1a1a1a;
+        }
+
+        .question-icon {
+            font-size: 20px;
+            line-height: 1;
+        }
+
+        .question-text {
+            font-size: 15px;
+        }
+
+        .required {
+            color: #dc2626;
+            margin-left: 4px;
+            font-weight: 600;
+        }
+
+        .options-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .option-chip {
+            padding: 8px 16px;
+            border: 2px solid #e5e7eb;
+            border-radius: 20px;
+            background: white;
+            color: #374151;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+            outline: none;
+        }
+
+        .option-chip:hover {
+            border-color: #3b82f6;
+            background: #eff6ff;
+            transform: translateY(-1px);
+        }
+
+        .option-chip.selected {
+            border-color: #2563eb;
+            background: #2563eb;
+            color: white;
+        }
+
+        .submit-clarification {
+            width: 100%;
+            padding: 12px 24px;
+            margin-top: 16px;
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            outline: none;
+        }
+
+        .submit-clarification:hover:not(:disabled) {
+            background: #1d4ed8;
+            transform: translateY(-1px);
+        }
+
+        .submit-clarification:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
         .chat-input-container {
             margin-top: 16px;
             border-top: 1px solid #e5e5e5;
@@ -2249,9 +2358,11 @@
         }
 
         // Deep Research Mode function
-        async function performDeepResearch(query) {
+        async function performDeepResearch(query, skipClarification = false, comprehensiveSearch = false) {
             console.log('=== Deep Research Mode ===');
             console.log('Query:', query);
+            console.log('Skip clarification:', skipClarification);
+            console.log('Comprehensive search:', comprehensiveSearch);
 
             // Save query before clearing (for conversation history)
             const savedQuery = query;
@@ -2259,9 +2370,31 @@
             // Clear input
             searchInput.value = '';
 
+            // Enable chat container for conversational clarification
+            const chatContainer = document.getElementById('chatContainer');
+            const chatMessagesEl = document.getElementById('chatMessages');
+            if (chatContainer) {
+                // Show results section (parent of chat container)
+                resultsSection.classList.add('active');
+                chatContainer.classList.add('active');
+                console.log('[Deep Research] Chat container activated');
+
+                // Add user message to chat
+                if (chatMessagesEl) {
+                    const userMessageDiv = document.createElement('div');
+                    userMessageDiv.className = 'chat-message user';
+                    userMessageDiv.innerHTML = `
+                        <div class="chat-message-header">你</div>
+                        <div class="chat-message-bubble">${escapeHTML(query)}</div>
+                    `;
+                    chatMessagesEl.appendChild(userMessageDiv);
+                    chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+                    console.log('[Deep Research] User message added to chat');
+                }
+            }
+
             // Show loading
             loadingState.classList.add('active');
-            resultsSection.classList.remove('active');
 
             try {
                 const base = window.location.origin;
@@ -2272,6 +2405,18 @@
                 deepResearchUrl.searchParams.append('site', 'all');
                 deepResearchUrl.searchParams.append('research_mode', currentResearchMode); // User-selected mode
                 deepResearchUrl.searchParams.append('max_iterations', '3');
+
+                // Add skip_clarification flag (critical for avoiding infinite loops)
+                if (skipClarification) {
+                    deepResearchUrl.searchParams.append('skip_clarification', 'true');
+                    console.log('[Deep Research] Skip clarification enabled');
+                }
+
+                // Add comprehensive_search flag for MMR tuning
+                if (comprehensiveSearch) {
+                    deepResearchUrl.searchParams.append('comprehensive_search', 'true');
+                    console.log('[Deep Research] Comprehensive search enabled (high diversity)');
+                }
 
                 // Add conversation_id for context continuity across modes
                 if (currentConversationId) {
@@ -2300,9 +2445,9 @@
                                 console.log('[Deep Research] Using backend conversation_id:', currentConversationId);
                             }
                         } else if (data.message_type === 'clarification_required') {
-                            // Phase 4: Clarification needed before proceeding
+                            // Phase 4: Clarification needed before proceeding (conversational)
                             console.log('[Clarification] Request received:', data.clarification);
-                            showClarificationModal(data.clarification, data.query, eventSource);
+                            addClarificationMessage(data.clarification, data.query, eventSource, savedQuery);
                         } else if (data.message_type === 'intermediate_result') {
                             // Progress update - show reasoning progress
                             updateReasoningProgress(data);
@@ -2515,6 +2660,216 @@
 
             // Scroll to bottom
             chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+        }
+
+        // Add clarification message to chat (conversational)
+        function addClarificationMessage(clarificationData, originalQuery, eventSource, savedQuery) {
+            console.log('[Clarification] Adding multi-dimensional clarification:', clarificationData);
+
+            // Hide loading state
+            const loadingState = document.getElementById('loadingState');
+            if (loadingState) {
+                loadingState.classList.remove('active');
+            }
+
+            // Get chat elements (should already be active from performDeepResearch)
+            const chatMessagesEl = document.getElementById('chatMessages');
+            if (!chatMessagesEl) {
+                console.error('[Clarification] Chat messages element not found');
+                return;
+            }
+
+            // Icon mapping for question types
+            const iconMap = {
+                'time': '🕒',
+                'scope': '🎯',
+                'entity': '🌐'
+            };
+
+            // Create clarification card
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'chat-message assistant clarification';
+
+            // Build clarification card HTML
+            let contentHTML = '<div class="chat-message-header">AI 助理</div>';
+            contentHTML += '<div class="chat-message-bubble">';
+            contentHTML += '<div class="clarification-card">';
+
+            // Header with instruction
+            contentHTML += `
+                <div class="clarification-header">
+                    ${clarificationData.instruction || '為了精準搜尋'}「${escapeHTML(originalQuery)}」，請選擇以下條件
+                </div>
+            `;
+
+            // Render each question block
+            clarificationData.questions.forEach(question => {
+                const icon = iconMap[question.clarification_type] || '❓';
+                const requiredMark = question.required ? '<span class="required">*</span>' : '';
+
+                contentHTML += `
+                    <div class="question-block" data-question-id="${question.question_id}">
+                        <div class="question-label">
+                            <span class="question-icon">${icon}</span>
+                            <span class="question-text">${question.question}${requiredMark}</span>
+                        </div>
+                        <div class="options-group">
+                `;
+
+                // Add option chips
+                question.options.forEach(opt => {
+                    const queryModifier = opt.query_modifier || '';
+                    const isComprehensive = opt.is_comprehensive || false;
+
+                    contentHTML += `
+                        <button class="option-chip"
+                                data-option-id="${opt.id}"
+                                data-label="${escapeHTML(opt.label)}"
+                                data-query-modifier="${escapeHTML(queryModifier)}"
+                                data-is-comprehensive="${isComprehensive}">
+                            ${escapeHTML(opt.label)}
+                        </button>
+                    `;
+                });
+
+                contentHTML += '</div></div>';
+            });
+
+            // Submit button
+            contentHTML += `
+                <button class="submit-clarification" disabled>
+                    ${clarificationData.submit_label || '開始搜尋'}
+                </button>
+            `;
+
+            contentHTML += '</div></div>'; // Close card and bubble
+
+            messageDiv.innerHTML = contentHTML;
+            chatMessagesEl.appendChild(messageDiv);
+            chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+
+            console.log('[Clarification] Multi-question card rendered');
+
+            // Attach event listeners
+            attachClarificationListeners(messageDiv, clarificationData, originalQuery, eventSource);
+        }
+
+        // Attach event listeners for multi-question clarification
+        function attachClarificationListeners(container, clarificationData, originalQuery, eventSource) {
+            const questions = clarificationData.questions;
+            const selectedAnswers = {}; // {question_id: {label, query_modifier, is_comprehensive}}
+
+            // Option click handler
+            container.querySelectorAll('.option-chip').forEach(chip => {
+                chip.addEventListener('click', function() {
+                    const questionBlock = this.closest('.question-block');
+                    const questionId = questionBlock.dataset.questionId;
+
+                    // Toggle selection (single select per question)
+                    questionBlock.querySelectorAll('.option-chip').forEach(c => c.classList.remove('selected'));
+                    this.classList.add('selected');
+
+                    // Store selection
+                    selectedAnswers[questionId] = {
+                        label: this.dataset.label,
+                        query_modifier: this.dataset.queryModifier,
+                        is_comprehensive: this.dataset.isComprehensive === 'true'
+                    };
+
+                    console.log('[Clarification] Selected:', questionId, selectedAnswers[questionId]);
+
+                    // Enable submit if all required questions answered
+                    const submitBtn = container.querySelector('.submit-clarification');
+                    const allAnswered = questions.every(q => selectedAnswers[q.question_id]);
+                    submitBtn.disabled = !allAnswered;
+
+                    if (allAnswered) {
+                        console.log('[Clarification] All questions answered, submit enabled');
+                    }
+                });
+            });
+
+            // Submit button handler
+            container.querySelector('.submit-clarification').addEventListener('click', () => {
+                submitClarification(selectedAnswers, originalQuery, eventSource, questions);
+            });
+        }
+
+        // Submit clarification response with natural language query building
+        function submitClarification(selectedAnswers, originalQuery, eventSource, questions) {
+            console.log('[Clarification] Submitting answers:', selectedAnswers);
+            console.log('[Clarification] Original query:', originalQuery);
+
+            // Close event source
+            if (eventSource) {
+                eventSource.close();
+            }
+
+            // Build clarified query using natural language (方案 B)
+            let clarifiedQuery = originalQuery;
+            let allComprehensive = true;
+
+            // Separate answers by clarification type
+            let timeModifier = '';
+            let scopeModifier = '';
+            let entityModifier = '';
+
+            questions.forEach(q => {
+                const answer = selectedAnswers[q.question_id];
+                if (!answer) return;
+
+                // Check if user chose comprehensive option
+                if (!answer.is_comprehensive) {
+                    allComprehensive = false;
+                }
+
+                // Collect modifiers by type
+                if (answer.query_modifier) {
+                    if (q.clarification_type === 'time') {
+                        timeModifier = answer.query_modifier;
+                    } else if (q.clarification_type === 'scope') {
+                        scopeModifier = answer.query_modifier;
+                    } else if (q.clarification_type === 'entity') {
+                        entityModifier = answer.query_modifier;
+                    }
+                }
+            });
+
+            // Build natural language query
+            // Strategy: time modifier goes before, scope modifier goes after
+            if (timeModifier && scopeModifier) {
+                // Example: "蔡英文卸任後的兩岸政策，聚焦外交關係"
+                clarifiedQuery = `${originalQuery}(${timeModifier}，${scopeModifier})`;
+            } else if (timeModifier) {
+                // Example: "蔡英文兩岸政策(任期內)"
+                clarifiedQuery = `${originalQuery}(${timeModifier})`;
+            } else if (scopeModifier) {
+                // Example: "momo科技(營運財報面向)"
+                clarifiedQuery = `${originalQuery}(${scopeModifier})`;
+            } else if (entityModifier) {
+                // Example: "晶片法案(美國)"
+                clarifiedQuery = `${entityModifier}${originalQuery}`;
+            }
+
+            console.log('[Clarification] Clarified query:', clarifiedQuery);
+            console.log('[Clarification] All comprehensive:', allComprehensive);
+
+            // Add user message showing selection
+            const chatMessagesEl = document.getElementById('chatMessages');
+            const userMessageDiv = document.createElement('div');
+            userMessageDiv.className = 'chat-message user';
+
+            const selectionText = Object.values(selectedAnswers).map(a => a.label).join(' + ');
+            userMessageDiv.innerHTML = `
+                <div class="chat-message-header">你</div>
+                <div class="chat-message-bubble">${escapeHTML(selectionText)}</div>
+            `;
+            chatMessagesEl.appendChild(userMessageDiv);
+            chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+
+            // Re-submit with skip_clarification flag
+            console.log('[Clarification] Re-submitting with skip_clarification=true');
+            performDeepResearch(clarifiedQuery, true, allComprehensive);
         }
 
         // View tabs
