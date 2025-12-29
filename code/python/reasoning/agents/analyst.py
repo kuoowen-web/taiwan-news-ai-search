@@ -38,7 +38,7 @@ class AnalystAgent(BaseReasoningAgent):
         temporal_context: Optional[Dict[str, Any]] = None
     ) -> AnalystResearchOutput:
         """
-        Conduct research and generate initial draft.
+        Enhanced research with optional argument graph generation.
 
         Args:
             query: User's research question
@@ -47,22 +47,40 @@ class AnalystAgent(BaseReasoningAgent):
             temporal_context: Optional temporal information (time range, etc.)
 
         Returns:
-            AnalystResearchOutput with validated schema
+            AnalystResearchOutput (or Enhanced version if feature enabled)
         """
+        # Import CONFIG here to avoid circular dependency
+        from core.config import CONFIG
+
+        # Check feature flag
+        enable_graphs = CONFIG.reasoning_params.get("features", {}).get("argument_graphs", False)
+
         # Build the system prompt from PDF (pages 7-10)
         system_prompt = self._build_research_prompt(
             query=query,
             formatted_context=formatted_context,
             mode=mode,
-            temporal_context=temporal_context
+            temporal_context=temporal_context,
+            enable_argument_graph=enable_graphs  # NEW parameter
         )
+
+        # Choose schema based on feature flag (Gemini Issue 2: Dynamic schema selection)
+        if enable_graphs:
+            from reasoning.schemas_enhanced import AnalystResearchOutputEnhanced
+            response_schema = AnalystResearchOutputEnhanced
+        else:
+            response_schema = AnalystResearchOutput
 
         # Call LLM with validation
         result = await self.call_llm_validated(
             prompt=system_prompt,
-            response_schema=AnalystResearchOutput,
+            response_schema=response_schema,
             level="high"
         )
+
+        # Validate argument graph if present
+        if hasattr(result, 'argument_graph') and result.argument_graph:
+            self._validate_argument_graph(result.argument_graph, result.citations_used)
 
         return result
 
@@ -104,7 +122,8 @@ class AnalystAgent(BaseReasoningAgent):
         query: str,
         formatted_context: str,
         mode: str,
-        temporal_context: Optional[Dict[str, Any]] = None
+        temporal_context: Optional[Dict[str, Any]] = None,
+        enable_argument_graph: bool = False
     ) -> str:
         """
         Build research prompt from PDF System Prompt (pages 7-10).
@@ -114,6 +133,7 @@ class AnalystAgent(BaseReasoningAgent):
             formatted_context: Pre-formatted context with [ID] citations
             mode: Research mode (strict, discovery, monitor)
             temporal_context: Optional time range information
+            enable_argument_graph: Enable argument graph generation (Phase 2)
 
         Returns:
             Complete system prompt string
@@ -287,6 +307,56 @@ class AnalystAgent(BaseReasoningAgent):
 - missing_information: 字串陣列（缺失的資訊）
 - new_queries: 字串陣列（補充搜尋的查詢，若 status 為 SEARCH_REQUIRED）
 """
+
+        # Add argument graph instructions if enabled (Phase 2)
+        if enable_argument_graph:
+            graph_instructions = """
+---
+
+## 階段 2.5+：知識圖譜建構（結構化輸出 - Phase 2）
+
+除了原有的 JSON 欄位外，新增 `argument_graph` 欄位（陣列）：
+
+```json
+{
+  "status": "DRAFT_READY",
+  "draft": "...",
+  "reasoning_chain": "...",
+  "citations_used": [1, 3, 5],
+  "argument_graph": [
+    {
+      "claim": "台積電高雄廠延後至2026年量產",
+      "evidence_ids": [1, 3],
+      "reasoning_type": "induction",
+      "confidence": "high"
+    },
+    {
+      "claim": "延後原因可能是設備供應鏈問題",
+      "evidence_ids": [3],
+      "reasoning_type": "abduction",
+      "confidence": "medium"
+    }
+  ]
+}
+```
+
+### 規則
+
+1. **每個關鍵論點都是一個 node**
+2. **evidence_ids 必須是 citations_used 的子集**
+3. **reasoning_type 選擇**：
+   - `deduction`: 基於普遍原則推導（如法律、物理定律）
+   - `induction`: 基於多個案例歸納（如趨勢分析）
+   - `abduction`: 基於觀察推測原因（如解釋現象）
+4. **confidence 基於證據力**：
+   - `high`: Tier 1-2 來源 + 多個獨立證實
+   - `medium`: 單一 Tier 2 或多個 Tier 3
+   - `low`: 僅有 Tier 4-5 或推測性陳述
+
+**重要**：如果資料不足以建構圖譜，可以將 `argument_graph` 設為 `null` 或空陣列 `[]`。系統會正常運作。
+"""
+            prompt += graph_instructions
+
         return prompt
 
     def _build_revision_prompt(
@@ -398,3 +468,22 @@ class AnalystAgent(BaseReasoningAgent):
 - 必須包含所有 AnalystResearchOutput schema 要求的欄位
 """
         return prompt
+
+    def _validate_argument_graph(self, graph: List, valid_citations: List[int]) -> None:
+        """
+        Ensure argument graph cites only available sources (Phase 2).
+
+        Args:
+            graph: List of ArgumentNode objects
+            valid_citations: List of valid citation IDs from analyst
+
+        Side effects:
+            - Logs warnings for invalid evidence_ids
+            - Removes invalid citations from nodes (in-place modification)
+        """
+        for node in graph:
+            invalid = [eid for eid in node.evidence_ids if eid not in valid_citations]
+            if invalid:
+                self.logger.warning(f"Node {node.node_id[:8]} has invalid evidence_ids: {invalid}")
+                # Remove invalid citations
+                node.evidence_ids = [eid for eid in node.evidence_ids if eid in valid_citations]

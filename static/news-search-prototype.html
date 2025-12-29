@@ -1920,12 +1920,21 @@
             const stage = data.stage;
             const details = container.querySelector('.progress-details');
 
+            // Use user_message from backend if available (Phase 1)
+            const userMessage = data.user_message || null;
+            const progress = data.progress || null;
+
             if (stage === 'analyst_analyzing') {
                 const stageEl = document.getElementById('stage-analyst');
                 console.log('[Progress] stage-analyst element:', stageEl);
                 if (stageEl) {
                     stageEl.classList.add('active');
-                    if (details) details.textContent = `Iteration ${data.iteration}/${data.total_iterations}: Analyzing sources...`;
+                    // Use user_message if available, otherwise fallback to English
+                    const message = userMessage || `Iteration ${data.iteration}/${data.total_iterations}: Analyzing sources...`;
+                    if (details) {
+                        details.textContent = message;
+                        if (progress !== null) details.textContent += ` (${progress}%)`;
+                    }
                 } else {
                     console.error('[Progress] stage-analyst element not found!');
                 }
@@ -1937,6 +1946,11 @@
                     const statusEl = stageEl.querySelector('.status');
                     if (statusEl) statusEl.textContent = `✓ ${data.citations_count || 0} sources`;
                 }
+                // Update details with user_message if available
+                if (details && userMessage) {
+                    details.textContent = userMessage;
+                    if (progress !== null) details.textContent += ` (${progress}%)`;
+                }
             } else if (stage === 'gap_search_started') {
                 // Phase 5: Gap Detection - Secondary search in progress
                 const stageEl = document.getElementById('stage-analyst');
@@ -1945,7 +1959,7 @@
                     stageEl.classList.remove('complete');
                     const queryList = data.new_queries ? data.new_queries.map(q => `「${q}」`).join(', ') : '';
                     details.innerHTML = `
-                        <div style="color: #f59e0b; font-weight: 500;">🔍 正在補充搜尋...</div>
+                        <div style="color: #f59e0b; font-weight: 500;">🔍 ${userMessage || '正在補充搜尋...'}</div>
                         <div style="font-size: 11px; margin-top: 4px; color: #64748b;">
                             ${data.gap_reason || '發現資訊缺口'}
                         </div>
@@ -1956,7 +1970,12 @@
                 const stageEl = document.getElementById('stage-critic');
                 if (stageEl) {
                     stageEl.classList.add('active');
-                    if (details) details.textContent = 'Reviewing draft for quality and compliance...';
+                    // Use user_message if available, otherwise fallback to English
+                    const message = userMessage || 'Reviewing draft for quality and compliance...';
+                    if (details) {
+                        details.textContent = message;
+                        if (progress !== null) details.textContent += ` (${progress}%)`;
+                    }
                 }
             } else if (stage === 'critic_complete') {
                 const stageEl = document.getElementById('stage-critic');
@@ -1967,11 +1986,32 @@
                     const statusEl = stageEl.querySelector('.status');
                     if (statusEl) statusEl.textContent = `${emoji} ${data.status}`;
                 }
+                // Update details with user_message if available
+                if (details && userMessage) {
+                    details.textContent = userMessage;
+                    if (progress !== null) details.textContent += ` (${progress}%)`;
+                }
+            } else if (stage === 'writer_planning') {
+                // Phase 3: Writer planning stage
+                const stageEl = document.getElementById('stage-writer');
+                if (stageEl) {
+                    stageEl.classList.add('active');
+                    const message = userMessage || 'Planning report structure...';
+                    if (details) {
+                        details.textContent = message;
+                        if (progress !== null) details.textContent += ` (${progress}%)`;
+                    }
+                }
             } else if (stage === 'writer_composing') {
                 const stageEl = document.getElementById('stage-writer');
                 if (stageEl) {
                     stageEl.classList.add('active');
-                    if (details) details.textContent = 'Composing final report...';
+                    // Use user_message if available, otherwise fallback to English
+                    const message = userMessage || 'Composing final report...';
+                    if (details) {
+                        details.textContent = message;
+                        if (progress !== null) details.textContent += ` (${progress}%)`;
+                    }
                 }
             } else if (stage === 'writer_complete') {
                 const stageEl = document.getElementById('stage-writer');
@@ -1980,7 +2020,9 @@
                     stageEl.classList.add('complete');
                     const statusEl = stageEl.querySelector('.status');
                     if (statusEl) statusEl.textContent = '✓ Done';
-                    if (details) details.textContent = '✅ Research complete!';
+                    // Use user_message if available, otherwise fallback to English
+                    const message = userMessage || '✅ Research complete!';
+                    if (details) details.textContent = message;
                 }
             }
         }
@@ -2513,6 +2555,9 @@
 
         function displayDeepResearchResults(report, metadata, savedQuery) {
             console.log('[Deep Research] Displaying results');
+            console.log('[Deep Research] Metadata received:', metadata);
+            console.log('[Deep Research] Sources array:', metadata?.sources);
+            console.log('[Deep Research] Sources count:', metadata?.sources?.length);
 
             // Show results section
             resultsSection.classList.add('active');
@@ -2530,7 +2575,10 @@
 
             // Add citation links if sources are available
             if (metadata && metadata.sources && metadata.sources.length > 0) {
+                console.log('[Deep Research] Adding citation links with', metadata.sources.length, 'sources');
                 reportHTML = addCitationLinks(reportHTML, metadata.sources);
+            } else {
+                console.warn('[Deep Research] No sources available for citation links');
             }
 
             reportContainer.innerHTML = reportHTML;

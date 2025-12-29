@@ -3,7 +3,20 @@ reasoning:
   max_iterations: 3
   analyst_timeout: 60
   critic_timeout: 30
-  writer_timeout: 45
+  writer_timeout: 90  # Increased from 45s to 90s for long-form generation (Phase 3)
+
+  # Feature flags for enhanced reasoning capabilities
+  features:
+    user_friendly_sse: true   # Phase 1: User-friendly Chinese progress messages
+    plan_and_write: true      # Phase 3: Plan-and-Write for long reports (2000+ words)
+    argument_graphs: true     # Phase 2: Structured argument decomposition
+    structured_critique: true # Phase 2: Structured weakness detection
+
+  # Auto-REJECT thresholds for Phase 2 structured critique
+  critique_thresholds:
+    critical_weakness_count: 2  # Auto-escalate to REJECT if >= N critical weaknesses
+    source_tier_violations: 1    # Max acceptable source tier violations
+
   tracing:
     console:
       enabled: true

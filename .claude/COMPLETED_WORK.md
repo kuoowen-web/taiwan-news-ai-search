@@ -190,3 +190,278 @@ This file contains detailed implementation history for completed tracks. Refer t
 - `56896b4` - Update BM25 implementation documentation and configuration
 - `4fbde5d` - Update documentation and clean up obsolete files
 - `a6e866a` - Backend and frontend updates for BM25 and analytics
+
+---
+
+## ✅ Track D: Reasoning System (Dec 2024)
+
+**Goal**: Build multi-agent reasoning system with Actor-Critic architecture for deep research
+
+**Status**: ✅ COMPLETED
+
+**What Was Built**:
+
+1. **Reasoning Orchestrator** (`reasoning/orchestrator.py` - 864 lines)
+   - **Actor-Critic loop** with max 3 iterations
+   - **4-phase pipeline**: Source Filter → Analyst → Critic → Writer
+   - **Hallucination guard**: Verify writer citations ⊆ analyst citations (set logic)
+   - **Unified context formatting**: Single source of truth prevents citation mismatch
+   - **Graceful degradation**: Continuous REJECT → Writer takes best draft
+   - **Token budget control**: MAX_TOTAL_CHARS = 20,000 (~10k tokens)
+   - **Continuous REJECT handling**: Up to max iterations before fallback
+
+2. **Base Agent** (`reasoning/agents/base.py` - 236 lines)
+   - `ask()` method with retry logic (max 3 attempts)
+   - Exponential backoff (2^attempt seconds)
+   - Timeout handling with `asyncio.wait_for()`
+   - Pydantic schema validation with JSON parsing
+   - Integration with `prompts.xml` via `find_prompt()` and `fill_prompt()`
+
+3. **Four Specialized Agents**
+
+   **Analyst Agent** (`reasoning/agents/analyst.py` - 400 lines):
+   - Research & synthesis with citation tracking
+   - Output schema: `AnalystResponse` (draft, sources_used, status, new_queries)
+   - Handles both initial research and revision based on critic feedback
+   - Gap detection triggers `SEARCH_REQUIRED` status
+
+   **Critic Agent** (`reasoning/agents/critic.py` - 312 lines):
+   - Quality review with 5 criteria (accuracy, completeness, clarity, citation, bias)
+   - Output schema: `CriticReview` (status, feedback, missing_info, score)
+   - Returns APPROVE or REJECT with detailed feedback
+   - Gap detection identifies missing information needs
+
+   **Writer Agent** (`reasoning/agents/writer.py` - 398 lines):
+   - Final formatting with markdown citations
+   - Output schema: `WriterResponse` (final_text, sources_used, citations_formatted)
+   - Hallucination check: sources_used must be ⊆ analyst's sources_used
+   - Generates user-ready formatted text
+
+   **Clarification Agent** (`reasoning/agents/clarification.py` - 183 lines):
+   - Ambiguity detection via heuristics + LLM
+   - Output schema: `ClarificationResponse` (needs_clarification, questions, suggestions)
+   - Triggers before research if query is ambiguous
+   - Returns 1-3 clarifying questions
+
+4. **Source Tier Filter** (`reasoning/filters/source_tier.py` - 221 lines)
+   - **3 modes**:
+     - `strict`: tier 1-2 only (官方 + 主流媒體)
+     - `discovery`: tier 1-5 (include 網媒 + 社群)
+     - `monitor`: compare tier 1 vs tier 5 (side-by-side)
+   - **10 source knowledge base**: 中央社, 公視, 行政院, 聯合報, 經濟日報, 自由時報, 報導者, 關鍵評論網, PTT, Dcard
+   - **Content enrichment**: Add `[Tier X | type]` prefix to each result
+   - **NoValidSourcesError**: Exception when no sources pass filter
+   - Unknown source handling with default tier 4
+
+5. **Debugging Utils**
+
+   **ConsoleTracer** (`reasoning/utils/console_tracer.py` - 514 lines):
+   - Real-time event visualization with colored output
+   - Tracks: Analyst, Critic, Writer, Clarification, Filter events
+   - Configurable log level (ERROR, WARN, INFO, DEBUG, TRACE)
+   - Color coding for different event types
+
+   **IterationLogger** (`reasoning/utils/iteration_logger.py` - 194 lines):
+   - JSON event stream logging to files
+   - Saves full event data + simplified event stream
+   - Per-query log files with timestamp
+   - Configurable via `config_reasoning.yaml`
+
+**Key Implementation Decisions**:
+- ✅ Unified context formatting (prevents citation mismatch)
+- ✅ Hallucination guard (set logic: `set(writer_sources).issubset(set(analyst_sources))`)
+- ✅ Graceful degradation (continuous REJECT → Writer takes best draft)
+- ✅ Token budget control (MAX_TOTAL_CHARS = 20,000)
+- ✅ Pydantic validation with retry logic (max 3 attempts)
+- ✅ Stateless design (absolute dates, no session state)
+
+**Configuration**:
+- `config/config_reasoning.yaml` (43 lines):
+  - reasoning: enabled, max_iterations, timeouts
+  - source_tiers: 10 sources with tier/type
+  - mode_configs: strict, discovery, monitor settings
+  - tracing: console and file logging options
+- `config/prompts.xml`:
+  - analyst_initial, analyst_revise
+  - critic_review
+  - writer_format
+  - clarification_detect
+
+**Testing Results**:
+- ✅ End-to-end research flow working
+- ✅ Citation verification preventing hallucinations
+- ✅ Graceful degradation on continuous REJECT
+- ✅ Console tracer providing useful debug visibility
+- ✅ Iteration logger capturing full event streams
+
+**Commits**:
+- `3c52b82` (Dec 22) - 小修正：改善 iteration logger 的路徑與日誌行為
+- `68d18c9` (Dec 22) - Update deep_research and news-search prototype
+- `1b16b28` (Dec 22) - Add clarification flow, hallucination guard, time-range handling and citation links
+- `bfe1548` (Dec 18) - Finalize reasoning tweaks and .gitignore updates
+- `5aee036` (Dec 18) - Add reasoning module and design/plan docs
+- `b1b89a9` (Dec 15) - Include architecture assets and add reasoning module
+
+---
+
+## ✅ Track E: Deep Research Method (Dec 2024)
+
+**Goal**: Integrate reasoning orchestrator with NLWeb search pipeline
+
+**Status**: ✅ COMPLETED
+
+**What Was Built**:
+
+1. **Deep Research Handler** (`methods/deep_research.py` - 667 lines)
+   - Calls reasoning orchestrator after retrieval
+   - SSE streaming integration with real-time events
+   - NLWeb Item format output (title, snippet, citations, URL, score, timestamp)
+   - Time range extraction integration
+   - Error handling with graceful fallback
+
+2. **Time Range Extractor** (`core/query_analysis/time_range_extractor.py` - 367 lines)
+   - **3-tier parsing**:
+     - **Tier 1 (Regex)**: Explicit dates (2024-01-01, 去年, 上個月)
+     - **Tier 2 (LLM)**: Contextual dates ("最近台灣的新聞")
+     - **Tier 3 (Keyword fallback)**: Default ranges for vague terms
+   - **Absolute date conversion**: Returns `start_date`, `end_date` as ISO strings
+   - **Stateless design**: No session state, always returns absolute dates
+   - Handles edge cases: "最近", "去年", "Q1 2024"
+
+3. **Clarification Flow**
+   - Detects ambiguous queries via Clarification Agent
+   - Returns clarifying questions to frontend via SSE
+   - User feedback loop integration (backend ready, UI in progress)
+   - Fallback: If user doesn't respond, proceed with best guess
+
+4. **Frontend Integration** (`static/news-search-prototype.html`)
+   - Citation link rendering with `[1]`, `[2]` format
+   - Time range display in UI
+   - Clarification UI (in progress)
+   - SSE message handling for reasoning events
+
+5. **JSON Repair Utility** (`core/utils/json_repair_utils.py` - 292 lines)
+   - Fixes common LLM JSON output errors
+   - Handles: unescaped quotes, trailing commas, missing brackets
+   - Used by BaseReasoningAgent for robust parsing
+   - Retry logic with repair attempts
+
+**Integration Flow**:
+1. User query → Time range extraction
+2. Clarification check (if ambiguous, return questions)
+3. Retrieval with filters (vector + BM25 hybrid)
+4. Source tier filtering (strict/discovery/monitor)
+5. Reasoning orchestrator (Analyst → Critic → Writer loop)
+6. Format as NLWeb Items with citations
+7. Stream to frontend via SSE
+
+**Key Features**:
+- ✅ Time range awareness (absolute dates for consistency)
+- ✅ Ambiguity handling (clarification before research)
+- ✅ Real-time streaming (SSE with event updates)
+- ✅ Citation links (clickable `[1]`, `[2]` references)
+- ✅ Robust JSON parsing (repair utility for LLM errors)
+
+**Testing Results**:
+- ✅ Time range extraction accurate (tested with "最近", "去年", explicit dates)
+- ✅ Clarification detects ambiguous queries
+- ✅ End-to-end deep research flow working
+- ✅ Citation links render correctly in UI
+
+**Commits**:
+- `1b16b28` (Dec 22) - Add clarification flow, hallucination guard, time-range handling and citation links
+- `68d18c9` (Dec 22) - Update deep_research and news-search prototype
+- `9e6d387` (Dec 18) - Fix core handlers & add json repair util
+
+---
+
+## ✅ Track F: XGBoost ML Ranking (Dec 2024)
+
+**Goal**: Replace portions of LLM ranking with ML model for cost/latency reduction
+
+**Status**: ✅ Phase A/B/C COMPLETED
+
+**What Was Built**:
+
+**Phase A: Infrastructure** ✅
+
+1. **Feature Engineering Module** (`training/feature_engineering.py` - 63 lines)
+   - Extract 29 features from analytics schema
+   - Features: query-level (length, term_count), document-level (doc_length, bm25_score), ranking (position, LLM scores)
+   - Populate `feature_vectors` table in batches
+   - Handle missing values and edge cases
+
+2. **XGBoost Ranker Module** (`core/xgboost_ranker.py` - 243 lines)
+   - Load trained models with global caching
+   - Extract features from in-memory ranking results
+   - Run inference (<100ms target)
+   - Calculate confidence scores
+   - Shadow mode support (compare XGBoost vs LLM)
+
+3. **Training Pipeline** (`training/xgboost_trainer.py`)
+   - Binary classification trainer (Phase 1)
+   - LambdaMART trainer (Phase 2)
+   - XGBRanker trainer (Phase 3)
+   - Model evaluation (NDCG@10, Precision@10, MAP)
+   - Model saving with metadata
+
+**Phase B: Training Pipeline** ✅
+
+4. **Export Training Data** (`training/export_training_data.py` - 350 lines)
+   - Export analytics data to CSV for training
+   - 29 columns with all features
+   - Handles missing values
+   - UTF-8 BOM for Chinese characters
+
+5. **Validate Training Data** (`training/validate_training_data.py` - 207 lines)
+   - Check data quality and completeness
+   - Verify feature distributions
+   - Detect anomalies and outliers
+   - Report statistics
+
+6. **Verify DB State** (`training/verify_db_state.py` - 133 lines)
+   - Check analytics database health
+   - Verify foreign key integrity
+   - Report row counts and schema version
+
+**Phase C: Production Deployment** ✅
+
+7. **Integration** (`core/ranking.py`)
+   - Pipeline: LLM → XGBoost → MMR
+   - XGBoost uses LLM scores as features (features 22-27)
+   - Enabled/disabled via config flag
+   - Shadow mode for validation
+
+8. **Model Registry**
+   - `models/xgboost_phase_c1.json` (trained model)
+   - `models/xgboost_phase_c1.metadata.json` (model metadata)
+   - Version tracking
+   - Rollback capabilities
+
+**Key Features**:
+- ✅ 29 features from analytics schema
+- ✅ XGBoost uses LLM scores as features (not replacement)
+- ✅ Global model caching for performance
+- ✅ Shadow mode for safe validation
+- ✅ Model registry with metadata
+
+**Key Implementation Decisions**:
+- ✅ XGBoost **augments** LLM (not replaces) by using LLM scores as features
+- ✅ Pipeline order: LLM → XGBoost → MMR (LLM runs first)
+- ✅ Shadow mode for Phase A/B validation before production
+- ✅ Feature engineering runs offline (not real-time)
+
+**Performance Targets**:
+- Inference latency: <100ms (achieved)
+- Model size: <10MB (achieved)
+- Feature extraction: <50ms (achieved)
+
+**Documentation**:
+- `algo/XGBoost_implementation.md` (500+ lines)
+- `algo/PHASE_A_COMPLETION_REPORT.md`
+- `algo/PHASE_B_STATUS_REPORT.md`
+
+**Commits**:
+- `c873fc9` (Dec 1) - XGBoost Phase A infrastructure + cleanup debug code
+- `2b0cfdc` (Dec 10) - Task B2: Add comparison metrics + schema metadata parsing
+- `42465fa` (Dec 4) - Phase A bugfixes + documentation cleanup

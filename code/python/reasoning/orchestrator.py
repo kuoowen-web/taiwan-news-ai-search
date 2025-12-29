@@ -17,6 +17,53 @@ from reasoning.schemas import WriterComposeOutput
 logger = get_configured_logger("reasoning.orchestrator")
 
 
+class ProgressConfig:
+    """進度條配置，用於SSE串流。"""
+
+    STAGES = {
+        "analyst_analyzing": {
+            "weight": 0.3,
+            "message": "正在深度分析資料來源...",
+        },
+        "analyst_complete": {
+            "weight": 0.5,
+            "message": "分析完成，開始品質審查",
+        },
+        "critic_reviewing": {
+            "weight": 0.6,
+            "message": "正在檢查邏輯與來源可信度...",
+        },
+        "critic_complete": {
+            "weight": 0.8,
+            "message": "審查完成",
+        },
+        "writer_planning": {
+            "weight": 0.82,
+            "message": "正在規劃報告結構...",
+        },
+        "writer_composing": {
+            "weight": 0.85,
+            "message": "正在撰寫最終報告...",
+        },
+        "writer_complete": {
+            "weight": 1.0,
+            "message": "報告生成完成",
+        },
+        "gap_search_started": {
+            "weight": 0.55,
+            "message": "偵測到資訊缺口，正在補充搜尋...",
+        }
+    }
+
+    @staticmethod
+    def calculate_progress(stage: str, iteration: int, total_iterations: int) -> int:
+        """計算給定stage的進度百分比。"""
+        stage_info = ProgressConfig.STAGES.get(stage, {"weight": 0.5})
+        base = int((iteration - 1) / total_iterations * 100)
+        offset = int(stage_info["weight"] * (100 / total_iterations))
+        return min(base + offset, 100)
+
+
 class DeepResearchOrchestrator:
     """
     Orchestrator for the Actor-Critic reasoning system.
@@ -150,7 +197,7 @@ class DeepResearchOrchestrator:
 
     async def _send_progress(self, message: Dict[str, Any]) -> None:
         """
-        Send non-blocking progress message via SSE.
+        Enhanced progress with user-friendly messages.
 
         Progress messages are sent to frontend to show real-time updates
         during the Actor-Critic loop. Failures are logged but don't interrupt execution.
@@ -158,6 +205,19 @@ class DeepResearchOrchestrator:
         Args:
             message: Progress message dict with message_type, stage, etc.
         """
+        # Add user-friendly message based on stage (using ProgressConfig)
+        if CONFIG.reasoning_params.get("features", {}).get("user_friendly_sse", False):
+            stage = message.get("stage", "")
+            iteration = message.get("iteration", 1)
+            total = message.get("total_iterations", 3)
+
+            # Use configuration class instead of hardcoded dict
+            stage_info = ProgressConfig.STAGES.get(stage)
+            if stage_info:
+                message["user_message"] = stage_info["message"]
+                message["progress"] = ProgressConfig.calculate_progress(stage, iteration, total)
+
+        # Existing send logic (unchanged)
         try:
             if hasattr(self.handler, 'message_sender'):
                 await self.handler.message_sender.send_message(message)
@@ -473,10 +533,10 @@ class DeepResearchOrchestrator:
 
                 if tracer:
                     with tracer.agent_span("critic", "review", critic_input) as span:
-                        review = await self.critic.review(draft, query, mode)
+                        review = await self.critic.review(draft, query, mode, analyst_output=response)
                         span.set_result(review)
                 else:
-                    review = await self.critic.review(draft, query, mode)
+                    review = await self.critic.review(draft, query, mode, analyst_output=response)
 
                 iteration_logger.log_agent_output(
                     iteration=iteration + 1,
@@ -545,18 +605,68 @@ class DeepResearchOrchestrator:
                 # We'll pass original review to Writer, which will handle REJECT status
 
             # Phase 3: Writer formats final report
-            # Send progress: Writer composing
-            await self._send_progress({
-                "message_type": "intermediate_result",
-                "stage": "writer_composing"
-            })
-
-            self.logger.info("Writer composing final report")
             analyst_citations = response.citations_used
+
+            # Check if plan-and-write is enabled (Phase 3)
+            enable_plan_and_write = CONFIG.reasoning_params.get("features", {}).get("plan_and_write", False)
+
+            plan = None
+            if enable_plan_and_write:
+                # Step 1: Plan
+                await self._send_progress({
+                    "message_type": "intermediate_result",
+                    "stage": "writer_planning",
+                    "iteration": iteration + 1,
+                    "total_iterations": max_iterations
+                })
+
+                self.logger.info("Writer planning report structure")
+                plan = await self.writer.plan(
+                    analyst_draft=draft,
+                    critic_review=review,
+                    user_query=query,
+                    target_length=2000
+                )
+
+                # Step 2: Compose
+                await self._send_progress({
+                    "message_type": "intermediate_result",
+                    "stage": "writer_composing",
+                    "iteration": iteration + 1,
+                    "total_iterations": max_iterations
+                })
+
+                self.logger.info("Writer composing long-form report based on plan")
+            else:
+                # Standard single-step compose
+                await self._send_progress({
+                    "message_type": "intermediate_result",
+                    "stage": "writer_composing"
+                })
+
+                self.logger.info("Writer composing final report")
+
+            # Build citation details for logging (show what citations Writer can use)
+            citation_details = {}
+            for cid in analyst_citations:
+                if cid in self.source_map:
+                    item = self.source_map[cid]
+                    if isinstance(item, dict):
+                        title = item.get("title") or item.get("name", "No title")
+                        url = item.get("url") or item.get("link", "")
+                    elif isinstance(item, (list, tuple)) and len(item) > 0:
+                        title = item[2] if len(item) > 2 else "No title"
+                        url = item[0] if len(item) > 0 else ""
+                    else:
+                        title = "Unknown"
+                        url = ""
+                    citation_details[cid] = f"{title[:60]}... ({url[:40]}...)" if url else title[:60]
+
             writer_input = {
-                "analyst_draft": draft,
+                "analyst_draft": draft[:200] + "...",  # Show preview
                 "critic_review": review,
-                "analyst_citations": list(self.source_map.keys()),
+                "analyst_citations": analyst_citations,
+                "citation_details": citation_details,  # Show actual source info
                 "mode": mode,
                 "user_query": query
             }
@@ -568,7 +678,8 @@ class DeepResearchOrchestrator:
                         critic_review=review,
                         analyst_citations=analyst_citations,
                         mode=mode,
-                        user_query=query
+                        user_query=query,
+                        plan=plan  # Pass plan (None if not enabled)
                     )
                     span.set_result(final_report)
             else:
@@ -577,7 +688,8 @@ class DeepResearchOrchestrator:
                     critic_review=review,
                     analyst_citations=analyst_citations,
                     mode=mode,
-                    user_query=query
+                    user_query=query,
+                    plan=plan  # Pass plan (None if not enabled)
                 )
 
             iteration_logger.log_agent_output(
@@ -693,10 +805,15 @@ class DeepResearchOrchestrator:
 
         ⚠️ CRITICAL: Must match schema expected by create_assistant_result()
         """
-        # Convert ALL source_map entries to URLs (not just sources_used)
-        # This ensures [1] maps to sources[0], [15] maps to sources[14], etc.
+        # Convert source_map to URL array for frontend citation linking
+        # Frontend expects: sources[0] = URL for [1], sources[1] = URL for [2], etc.
+        # We build a complete array from citation ID 1 to max ID used
         source_urls = []
         max_cid = max(self.source_map.keys()) if self.source_map else 0
+        writer_citations = final_report.sources_used  # List of citation IDs like [1, 4, 10, 18...]
+
+        self.logger.info(f"Writer cited {len(writer_citations)} sources: {writer_citations}")
+        self.logger.info(f"Building complete source URL array from 1 to {max_cid}")
 
         for cid in range(1, max_cid + 1):
             if cid in self.source_map:
@@ -708,12 +825,15 @@ class DeepResearchOrchestrator:
                     url = item[0]  # First element is URL in tuple format
                 else:
                     url = ""
+                    self.logger.warning(f"Citation ID {cid} has invalid format: {type(item)}")
+
                 source_urls.append(url if url else "")  # Keep empty string to maintain index alignment
             else:
-                # Missing citation ID - maintain index alignment
+                # Missing citation ID - maintain index alignment with empty string
                 source_urls.append("")
+                self.logger.warning(f"Citation ID {cid} missing in source_map")
 
-        self.logger.info(f"Converted source_map ({len(self.source_map)} items) to {len(source_urls)} URLs (max citation ID: {max_cid})")
+        self.logger.info(f"Converted source_map ({len(self.source_map)} items) to {len(source_urls)} URLs for frontend")
 
         return [{
             "@type": "Item",

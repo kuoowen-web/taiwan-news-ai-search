@@ -1,53 +1,64 @@
 # NLWeb Project Context
 
-## Current Status: Week 3-4 (XGBoost Infrastructure Phase)
+## Current Status: Reasoning & Research System (Completed Dec 2024)
 
 ### Current Focus
-**Phase A: XGBoost Infrastructure** - Building ML ranking system (feature engineering, training pipeline, inference module)
+**Performance Optimization Phase** - Refining reasoning system for production use
 
-### Recently Completed
+### Recently Completed (Dec 2024)
+- ✅ Track D: Reasoning System (Actor-Critic architecture)
+- ✅ Track E: Deep Research Method (time range, clarification, citations)
+- ✅ Track F: XGBoost Phase C (ML ranking fully deployed)
+
+### Previously Completed
 - ✅ Track A: Analytics Infrastructure
-- ✅ Track B: BM25 Implementation  
+- ✅ Track B: BM25 Implementation
 - ✅ Track C: MMR Implementation
+- ✅ XGBoost Phase A: Infrastructure
+- ✅ XGBoost Phase B: Training pipeline
 
 ---
 
 ## Current Work
 
-### 🔄 Phase A: XGBoost Infrastructure (Week 3-4) - IN PROGRESS
+### 🔄 Performance Optimization - IN PROGRESS
 
-**Goal**: Build complete ML ranking infrastructure before data collection.
+**Goal**: Optimize reasoning system latency and cost for production workloads.
 
-**Status**: Configuration and documentation complete, implementing modules.
+**Completed Foundation**:
+- Reasoning orchestrator with 4 agents (864 lines)
+- Deep research method with SSE streaming (667 lines)
+- Time range extraction (3-tier parsing, 367 lines)
+- Hallucination guard and citation verification
+- Source tier filtering (10 sources, 3 modes)
+- Console tracer and iteration logger
 
-**Completed**:
-- Documentation: `algo/XGBoost_implementation.md` (500+ lines)
-- Configuration: `config/config_retrieval.yaml` (xgboost_params)
-- Architecture: LLM → XGBoost → MMR pipeline
+**Current Optimization Targets**:
+- Reduce iteration latency (Analyst/Critic/Writer phases)
+- Optimize prompt token usage
+- Improve citation quality and formatting
+- Enhance clarification question generation
 
-**Remaining Tasks**:
-- Implement `training/feature_engineering.py`
-- Implement `core/xgboost_ranker.py`
-- Implement `training/xgboost_trainer.py`
-- Integrate into `core/ranking.py`
-- Write unit tests
-- Create mock training data
-
-**Key Decisions**: XGBoost uses LLM scores as features, 29 features from analytics schema, shadow mode for validation.
+**Key Metrics**:
+- Reasoning iterations: Max 3 (actor-critic loop)
+- Source tiers: 1-2 (strict), 1-5 (discovery), 1+5 (monitor)
+- Agents: Analyst, Critic, Writer, Clarification
 
 ---
 
 ## Next Immediate Steps
 
-### Week 3: Integration & LLM Optimization
-- Test BM25 + MMR with diverse queries
-- Slim down LLM ranking prompts (remove keyword/freshness scoring)
-- Set up A/B testing infrastructure
-- Gradual production rollout (10% → 100%)
+### Short-term (Current Sprint)
+- Profile reasoning system performance
+- Refine clarification flow UI/UX
+- Test hallucination guard effectiveness
+- Improve citation link rendering
 
-### Week 4-6: Data Collection for XGBoost
-- Monitor analytics data collection (target: 10,000+ queries)
-- Prepare feature engineering (12-15 features)
+### Medium-term
+- Add progress indicators for long research queries
+- Implement user feedback loop for clarification
+- Optimize prompt templates for reduced tokens
+- A/B test reasoning vs standard search
 
 See `.claude/NEXT_STEPS.md` for detailed roadmap.
 

@@ -1,247 +1,210 @@
-# Next Steps - ML Search Enhancement
+# Next Steps - Production Optimization & Refinement
 
-## Immediate Tasks (Week 3-4)
+## Current Focus (Dec 2024 - Jan 2025)
 
-### 🔄 IN PROGRESS: Phase A - XGBoost Infrastructure
+### 🔄 IN PROGRESS: Performance Optimization
 
-**Goal**: Build complete ML ranking infrastructure before data collection
+**Goal**: Optimize reasoning system for production workloads (latency, cost, quality)
 
-**Status**: Configuration complete (2025-01-26), now implementing modules
+**Completed Foundation**:
+- ✅ Reasoning Module (orchestrator + 4 agents, 864 lines)
+- ✅ Deep Research Method (SSE streaming, 667 lines)
+- ✅ XGBoost ML Ranking (Phase A/B/C fully deployed)
+- ✅ Time Range & Clarification (3-tier parsing, ambiguity handling)
+- ✅ BM25, MMR, Analytics Infrastructure
 
-**Completed**:
-- ✅ Documentation (`algo/XGBoost_implementation.md`)
-- ✅ Configuration (`config/config_retrieval.yaml`, `core/config.py`)
-- ✅ ML dependencies (`requirements.txt`)
-- ✅ Architecture finalization (LLM → XGBoost → MMR)
+**Current Optimization Tasks**:
 
-**In Progress** (Week 1 Remaining):
+1. **Reduce Reasoning Latency**
+   - Profile iteration times (Analyst/Critic/Writer phases)
+   - Identify bottlenecks in LLM calls and processing
+   - Optimize prompt token usage (reduce context size)
+   - Consider parallel agent execution where possible
 
-1. **Feature Engineering Module** (`code/python/training/feature_engineering.py`)
-   - Extract 29 features from analytics database
-   - Populate feature_vectors table in batches
-   - Query-level, document-level, and ranking features
-   - Handle missing values and edge cases
+2. **Improve Citation Quality**
+   - Test hallucination guard effectiveness with edge cases
+   - Refine source tier filtering rules based on real usage
+   - Add citation formatting options (footnotes, inline, references)
+   - Validate citation links work correctly
 
-2. **XGBoost Ranker Module** (`code/python/core/xgboost_ranker.py`)
-   - Load trained models with global caching
-   - Extract features from in-memory ranking results
-   - Run inference (<100ms target)
-   - Calculate confidence scores
-   - Shadow mode support
+3. **Enhance User Experience**
+   - Improve clarification question quality and relevance
+   - Add progress indicators for long research queries
+   - Implement user feedback loop for clarification responses
+   - Better error messaging and graceful degradation
 
-3. **Training Pipeline** (`code/python/training/xgboost_trainer.py`)
-   - Binary classification trainer (Phase 1)
-   - LambdaMART trainer (Phase 2)
-   - XGBRanker trainer (Phase 3)
-   - Model evaluation (NDCG@10, Precision@10, MAP)
-   - Model saving with metadata
+4. **Cost Optimization**
+   - Analyze token usage across agents
+   - Slim down prompts without losing quality
+   - Implement smarter caching strategies
+   - Consider model downgrade for non-critical agents
 
-**Week 2 Tasks**:
+---
 
-4. **Integration** (`code/python/core/ranking.py`)
-   - Insert XGBoost call after LLM ranking, before MMR
-   - Handle enabled/disabled gracefully
-   - Log metadata for analytics
+## Short-term Tasks (Next 2-4 Weeks)
 
-5. **Unit Tests** (`code/python/testing/test_xgboost.py`)
-   - Feature extraction tests
-   - Model loading tests
-   - Inference pipeline tests
-   - Shadow mode validation
+### 1. Reasoning System Refinement
 
-6. **Mock Data** (`code/python/testing/mock_training_data.py`)
-   - Generate synthetic features (29 features)
-   - Generate labels (binary, regression)
-   - Create tiny XGBoost model for testing
+**Priority**: High
+
+**Tasks**:
+- Profile reasoning performance with 20+ diverse queries
+- Measure iteration times, token usage, cost per query
+- Identify optimization opportunities
+- Implement top 3 optimizations
+
+**Success Metrics**:
+- Reduce average latency by 20-30%
+- Reduce cost per query by 15-25%
+- Maintain or improve citation quality
+
+---
+
+### 2. Clarification Flow UI
+
+**Priority**: Medium
+
+**Tasks**:
+- Design clarification question UI in `news-search-prototype.html`
+- Implement user response capture
+- Integrate response with re-query flow
+- Test with ambiguous queries
+
+**Files to Modify**:
+- `static/news-search-prototype.html` (frontend UI)
+- `webserver/routes/api.py` (clarification endpoints)
+- `methods/deep_research.py` (response handling)
+
+---
+
+### 3. Hallucination Guard Testing
+
+**Priority**: High
+
+**Tasks**:
+- Create test suite with 10+ edge cases
+- Test citation verification logic
+- Validate set operations (writer sources ⊆ analyst sources)
+- Document failure modes and mitigations
+
+**Edge Cases to Test**:
+- Writer adds new sources not in analyst citations
+- Analyst provides no citations
+- Numbered citations mismatch between iterations
+- Empty or malformed citation arrays
+
+---
+
+### 4. A/B Testing Infrastructure
+
+**Priority**: Medium
+
+**Tasks**:
+- Implement feature flag for reasoning vs standard search
+- Add query routing logic (10% → 50% → 100%)
+- Set up metrics dashboard for comparison
+- Define success criteria (CTR, dwell time, quality ratings)
+
+---
+
+## Medium-term Tasks (1-2 Months)
+
+### 1. Model Retraining Pipeline
+
+**Goal**: Continuous learning for XGBoost ranker
+
+**Tasks**:
+- Set up automated weekly/monthly retraining
+- Incorporate latest user interaction data
+- Evaluate model performance trends
+- Deploy new models with A/B testing
+
+---
+
+### 2. Advanced Reasoning Features
+
+**Goal**: Enhance reasoning capabilities
+
+**Tasks**:
+- Multi-turn research (follow-up queries)
+- Cross-reference detection (contradictions, confirmations)
+- Temporal analysis (trend detection, timeline construction)
+- Comparative research (side-by-side analysis)
+
+---
+
+### 3. User Personalization
+
+**Goal**: Tailor results to user preferences
+
+**Tasks**:
+- Track user interaction patterns
+- Build user preference profiles
+- Personalize source tier weights
+- Adaptive λ tuning for MMR
+
+---
+
+## Long-term Vision (3-6 Months)
+
+### 1. Multi-Objective Optimization
+
+- Balance relevance, diversity, freshness, and trustworthiness
+- Incorporate business metrics (engagement, revenue)
+- Dynamic objective weighting based on query type
+
+---
+
+### 2. Online Learning
+
+- Update models incrementally with new data
+- Faster adaptation to changing patterns
+- Real-time feedback loops
+
+---
+
+### 3. Expanded Source Coverage
+
+- Add more tier 1-2 sources (expand knowledge base to 20+ sources)
+- Improve unknown source handling
+- Multi-language support (English, Japanese)
 
 ---
 
 ## Previously Completed
 
-### ✅ COMPLETED: Track A - Analytics Infrastructure
-All components deployed and operational:
+### ✅ Track A: Analytics Infrastructure (Nov 2024)
 - PostgreSQL database via Neon.tech
 - Query logging with parent_query_id linking
 - Multi-click tracking (left/middle/right)
 - Dashboard with parent query filtering
 - Foreign key integrity issues resolved
 
----
+### ✅ Track B: BM25 Implementation (Nov 2024)
+- Custom BM25 implementation (733 lines)
+- Intent detection (EXACT_MATCH, SEMANTIC, BALANCED)
+- Hybrid scoring (α * vector + β * bm25)
+- Analytics logging
 
-### ✅ COMPLETED: Track B - BM25 Implementation
+### ✅ Track C: MMR Implementation (Nov 2024)
+- Classic MMR formula with intent-based λ tuning
+- Cosine similarity for diversity measurement
+- Integration after LLM ranking
 
-**Goal**: Replace LLM keyword scoring with BM25 algorithm
+### ✅ Track D: Reasoning System (Dec 2024)
+- Actor-Critic orchestrator (864 lines)
+- 4 specialized agents (Analyst, Critic, Writer, Clarification)
+- Source tier filtering (3 modes, 10 sources)
+- Hallucination guard and citation verification
+- Console tracer and iteration logger
 
-**Steps**:
-1. **Research & Library Selection**
-   - Evaluate `rank-bm25` Python library
-   - Or implement custom BM25 from scratch
-   - Consider Qdrant's built-in BM25 capabilities
+### ✅ Track E: Deep Research Method (Dec 2024)
+- Integration with NLWeb pipeline
+- Time range extraction (3-tier parsing)
+- Clarification flow (ambiguity detection)
+- SSE streaming with citations
 
-2. **Implementation** (`code/python/core/bm25.py`)
-   - BM25 scoring function
-   - Document frequency calculation
-   - Inverse document frequency (IDF) weights
-   - Configurable parameters (k1, b)
-
-3. **Integration** (`code/python/retrieval_providers/qdrant.py`)
-   - Call BM25 scorer after vector retrieval
-   - Combine scores: `final_score = α * vector_score + β * bm25_score`
-   - Make α, β configurable per site
-
-4. **Analytics Logging**
-   - Record `bm25_score` in `retrieved_documents` table
-   - Track BM25 contribution to final ranking
-
-5. **Testing**
-   - Unit tests for BM25 scorer
-   - Verify scores make sense for sample queries
-   - Compare against LLM keyword scores
-
----
-
-### 🔄 IN PROGRESS: Track C - MMR Implementation
-
-**Goal**: Replace LLM diversity re-ranking with MMR algorithm
-
-**Steps**:
-1. **Implementation** (`code/python/core/mmr.py`)
-   - Classic MMR formula: `λ * relevance - (1-λ) * max_similarity`
-   - Document similarity calculation (cosine similarity of embeddings)
-   - Intent-based λ tuning (exploratory vs specific queries)
-
-2. **Integration** (`code/python/core/post_ranking.py`)
-   - Replace `apply_diversity_reranking()` LLM call
-   - Apply MMR to top-N results (e.g., top 50)
-   - Keep diversity threshold configurable
-
-3. **Analytics Logging**
-   - Record `mmr_diversity_score` in `ranking_scores` table
-   - Track diversity improvement metrics
-
-4. **Testing**
-   - Verify diversity improves (fewer duplicate topics)
-   - Compare against LLM diversity re-ranking
-   - A/B test with real users
-
----
-
-## Week 3: Integration & LLM Optimization
-
-**Goals**:
-- Deploy BM25 + MMR to production
-- Slim down LLM prompts (remove keyword/freshness scoring)
-- Target: 40% cost reduction, 40% latency reduction
-
-**Tasks**:
-1. **Update LLM Prompts** (`config/prompts.xml`)
-   - Remove keyword scoring dimension (now BM25)
-   - Remove freshness scoring dimension (now algorithmic)
-   - Keep only semantic relevance scoring
-
-2. **Score Combination** (`code/python/core/ranking.py`)
-   - Combine BM25, vector, and LLM scores
-   - Configurable weights per site
-
-3. **Gradual Rollout**
-   - Deploy to 10% of traffic first
-   - Monitor latency, cost, and quality metrics
-   - Scale to 100% if successful
-
-4. **A/B Testing**
-   - Compare against baseline (current LLM-only)
-   - Measure CTR, dwell time, user satisfaction
-   - Track cost and latency improvements
-
----
-
-## Week 4-6: Data Collection & XGBoost Training
-
-**Goals**:
-- Collect 10,000+ queries with user interactions
-- Feature engineering for ML ranking
-- Train initial XGBoost model
-
-**Prerequisites**:
-- ✅ Analytics system collecting data
-- ✅ Schema v2 with ML feature columns
-- 🔄 BM25 and MMR deployed (provides more features)
-
-**Tasks**:
-1. **Monitor Data Collection**
-   - Verify 100+ queries/day being logged
-   - Check user interaction data quality
-   - Export training data periodically
-
-2. **Feature Engineering** (`code/python/ml/feature_engineering.py`)
-   - Extract 12-15 features per query-doc pair
-   - Implement feature calculation functions
-   - Handle missing values and edge cases
-
-3. **Prepare Training Data** (`code/python/ml/prepare_training_data.py`)
-   - Create train/val/test splits (70/15/15)
-   - Balance positive/negative examples
-   - Generate feature vectors table
-
-4. **Train XGBoost Model** (`code/python/ml/train_ranker.py`)
-   - Hyperparameter tuning (max_depth, learning_rate, etc.)
-   - Cross-validation
-   - Model evaluation (NDCG, MAP)
-
-5. **Model Registry** (`code/python/ml/model_registry.py`)
-   - Version tracking
-   - Model metadata storage
-   - Rollback capabilities
-
----
-
-## Week 7-8: XGBoost Deployment
-
-**Goals**:
-- Shadow mode validation
-- Gradual traffic migration (10% → 50% → 100%)
-- Cascading architecture: XGBoost → LLM (top-10 only)
-- Target: 88% total cost reduction, 75% latency reduction
-
-**Tasks**:
-1. **XGBoost Inference** (`code/python/core/xgboost_ranker.py`)
-   - Load trained model
-   - Feature extraction in real-time
-   - Fast inference (<100ms)
-
-2. **Cascading Logic**
-   - High confidence (>0.85): Skip LLM entirely
-   - Medium (0.7-0.85): LLM refines top-10 only
-   - Low (<0.7): LLM processes all results
-
-3. **Shadow Mode Testing**
-   - Run XGBoost in parallel with LLM
-   - Compare rankings but don't show to users
-   - Validate accuracy before switching
-
-4. **Gradual Rollout**
-   - 10% → 50% → 100% traffic migration
-   - Monitor quality metrics closely
-   - Rollback procedure ready
-
----
-
-## Future Improvements
-
-1. **Model Retraining Pipeline**
-   - Automated weekly/monthly retraining
-   - Incorporate latest user interaction data
-   - Continuous learning loop
-
-2. **Advanced Features**
-   - User personalization features
-   - Session context features
-   - Time-of-day patterns
-
-3. **Multi-Objective Optimization**
-   - Balance relevance, diversity, and freshness
-   - Incorporate business metrics (engagement, revenue)
-
-4. **Online Learning**
-   - Update model incrementally with new data
-   - Faster adaptation to changing patterns
+### ✅ Track F: XGBoost ML Ranking (Dec 2024)
+- Phase A: Infrastructure (feature engineering, ranker, trainer)
+- Phase B: Training pipeline (binary → LambdaMART → XGBRanker)
+- Phase C: Production deployment (shadow mode → rollout)

@@ -34,32 +34,73 @@ class CriticAgent(BaseReasoningAgent):
         self,
         draft: str,
         query: str,
-        mode: str
+        mode: str,
+        analyst_output=None  # Optional: Full analyst output with argument_graph
     ) -> CriticReviewOutput:
         """
-        Review draft for quality and compliance.
+        Enhanced review with optional structured weaknesses (Phase 2).
 
         Args:
             draft: Draft content to review
             query: Original user query
             mode: Research mode (strict, discovery, monitor)
+            analyst_output: Optional AnalystResearchOutput with argument_graph
 
         Returns:
-            CriticReviewOutput with validated schema
+            CriticReviewOutput (or Enhanced version if feature enabled)
         """
+        # Import CONFIG here to avoid circular dependency
+        from core.config import CONFIG
+
+        enable_structured = CONFIG.reasoning_params.get("features", {}).get("structured_critique", False)
+
+        # Extract argument_graph if available
+        argument_graph = None
+        if analyst_output and hasattr(analyst_output, 'argument_graph'):
+            argument_graph = analyst_output.argument_graph
+
         # Build the review prompt from PDF (pages 16-21)
         review_prompt = self._build_review_prompt(
             draft=draft,
             query=query,
-            mode=mode
+            mode=mode,
+            argument_graph=argument_graph,
+            enable_structured_weaknesses=enable_structured
         )
+
+        # Choose schema based on feature flag (Gemini Issue 2: Dynamic schema selection)
+        if enable_structured:
+            from reasoning.schemas_enhanced import CriticReviewOutputEnhanced
+            response_schema = CriticReviewOutputEnhanced
+        else:
+            response_schema = CriticReviewOutput
 
         # Call LLM with validation
         result = await self.call_llm_validated(
             prompt=review_prompt,
-            response_schema=CriticReviewOutput,
+            response_schema=response_schema,
             level="high"
         )
+
+        # Auto-escalate based on critical weaknesses (Phase 2)
+        if hasattr(result, 'structured_weaknesses') and result.structured_weaknesses:
+            critical_count = sum(1 for w in result.structured_weaknesses if w.severity == "critical")
+            thresholds = CONFIG.reasoning_params.get("critique_thresholds", {})
+            max_critical = thresholds.get("critical_weakness_count", 2)
+
+            if critical_count >= max_critical and result.status != "REJECT":
+                self.logger.warning(f"Auto-escalating to REJECT: {critical_count} critical weaknesses")
+                # Rebuild with REJECT (import here to avoid circular dependency)
+                from reasoning.schemas_enhanced import CriticReviewOutputEnhanced
+                result = CriticReviewOutputEnhanced(
+                    status="REJECT",
+                    critique=result.critique + f"\n\n[自動升級至 REJECT：{critical_count} 個嚴重問題]",
+                    suggestions=result.suggestions,
+                    mode_compliance=result.mode_compliance,
+                    logical_gaps=result.logical_gaps,
+                    source_issues=result.source_issues,
+                    structured_weaknesses=result.structured_weaknesses
+                )
 
         return result
 
@@ -67,7 +108,9 @@ class CriticAgent(BaseReasoningAgent):
         self,
         draft: str,
         query: str,
-        mode: str
+        mode: str,
+        argument_graph=None,
+        enable_structured_weaknesses: bool = False
     ) -> str:
         """
         Build review prompt from PDF System Prompt (pages 16-21).
@@ -76,6 +119,8 @@ class CriticAgent(BaseReasoningAgent):
             draft: The draft content to review
             query: Original user query
             mode: Research mode (strict, discovery, monitor)
+            argument_graph: Optional argument graph from Analyst (Phase 2)
+            enable_structured_weaknesses: Enable structured weakness detection (Phase 2)
 
         Returns:
             Complete review prompt string
@@ -230,6 +275,66 @@ class CriticAgent(BaseReasoningAgent):
 
 現在，請開始審查。
 """
+
+        # Add structured weakness instructions if enabled (Phase 2)
+        if enable_structured_weaknesses and argument_graph:
+            weakness_instructions = """
+---
+
+## 弱點分類（WeaknessType - Phase 2）
+
+請針對每個 ArgumentNode 檢查以下標準弱點（必須完全匹配）：
+
+- `"insufficient_evidence"`: 證據不足（僅 1 個來源支持關鍵論點）
+- `"biased_sample"`: 樣本偏誤（只引用成功案例，忽略失敗案例）
+- `"correlation_not_causation"`: 相關非因果（誤將相關性當因果）
+- `"hasty_generalization"`: 倉促歸納（小樣本推廣至全體）
+- `"missing_alternatives"`: 缺少替代解釋（abduction 只提 1 種可能）
+- `"invalid_deduction"`: 無效演繹（前提不支持結論）
+- `"source_tier_violation"`: 來源層級違規（strict mode 引用 Tier 3+）
+- `"logical_leap"`: 邏輯跳躍（缺少中間推理步驟）
+
+**Argument Graph 內容**：
+```json
+{argument_graph}
+```
+
+**輸出範例**：
+
+```json
+{
+  "status": "REJECT",
+  "critique": "...",
+  "suggestions": ["..."],
+  "mode_compliance": "違反",
+  "logical_gaps": ["..."],
+  "source_issues": ["..."],
+  "structured_weaknesses": [
+    {
+      "node_id": "uuid-from-analyst",
+      "weakness_type": "source_tier_violation",
+      "severity": "critical",
+      "explanation": "在 strict 模式下引用了 Dcard (Tier 5)，違反 max_tier=2 規則"
+    }
+  ]
+}
+```
+
+**重要**：如果沒有發現結構化弱點，將 `structured_weaknesses` 設為空陣列 `[]`。
+"""
+            # Convert argument_graph to string for prompt
+            import json
+            graph_str = json.dumps([{
+                "node_id": node.node_id,
+                "claim": node.claim,
+                "evidence_ids": node.evidence_ids,
+                "reasoning_type": node.reasoning_type,
+                "confidence": node.confidence
+            } for node in argument_graph], ensure_ascii=False, indent=2)
+
+            weakness_instructions = weakness_instructions.replace("{argument_graph}", graph_str)
+            prompt += weakness_instructions
+
         return prompt
 
     def _build_mode_compliance_rules(self, mode: str) -> str:

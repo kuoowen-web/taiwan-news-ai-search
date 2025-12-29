@@ -45,11 +45,21 @@ cd code && ./python/testing/run_all_tests.sh
 - Request Handler: `core/baseHandler.py`
 - Pre-retrieval: `pre_retrieval/` (decontextualization, query rewrite)
 - Methods: `methods/` (tool implementations)
+  - Deep Research: `methods/deep_research.py`
 - Retrieval: `retrieval/` (vector DB clients)
   - BM25 Integration: `core/bm25.py`
-- Ranking: `core/ranking.py`
+- Ranking: `core/ranking.py` (LLM → XGBoost → MMR pipeline)
+  - XGBoost: `core/xgboost_ranker.py`
+  - MMR: `core/mmr.py`
+- Reasoning System: `reasoning/` (multi-agent research system)
+  - Orchestrator: `reasoning/orchestrator.py` (actor-critic loop)
+  - Agents: `reasoning/agents/` (analyst, critic, writer, clarification)
+  - Filters: `reasoning/filters/source_tier.py`
+  - Utils: `reasoning/utils/` (console_tracer, iteration_logger)
+- Query Analysis: `core/query_analysis/time_range_extractor.py`
+- Utils: `core/utils/json_repair_utils.py`
 - LLM Providers: `llm/`
-- Configuration: `config/` (YAML files)
+- Configuration: `config/` (YAML files including `config_reasoning.yaml`)
 
 **Frontend** (Production):
 - Main UI: `static/news-search-prototype.html`
@@ -95,15 +105,29 @@ Test files use JSON format with test_type field and type-specific parameters.
 
 ## Current Development Focus
 
-**Phase A: XGBoost Infrastructure (Week 3-4)** - Building ML ranking system:
-- Feature engineering module (`training/feature_engineering.py`)
-- XGBoost ranker module (`core/xgboost_ranker.py`)
-- Training pipeline (`training/xgboost_trainer.py`)
-- Shadow mode validation before production deployment
+**Current Status**: Reasoning Module & Deep Research System (Completed Dec 2024)
 
-**Also In Progress**:
-- WebSocket-based chat system (`conversation-api-implementation` branch)
-- Multi-participant support with backward compatibility
+**Recently Completed**:
+- ✅ **Reasoning System**: Multi-agent Actor-Critic architecture for deep research
+  - Orchestrator with hallucination guard and citation verification
+  - Four specialized agents (Analyst, Critic, Writer, Clarification)
+  - Source tier filtering with 3 modes (strict/discovery/monitor)
+  - Console tracer and iteration logger for debugging
+- ✅ **Deep Research Method**: Integrated reasoning orchestrator with NLWeb pipeline
+  - Time range extraction (3-tier parsing: Regex → LLM → Keyword)
+  - Clarification flow for ambiguous queries
+  - SSE streaming with citation links
+- ✅ **XGBoost ML Ranking**: Complete Phase A/B/C deployment
+  - 29 features from analytics schema
+  - Training pipeline with model registry
+  - Production integration (LLM → XGBoost → MMR)
+- ✅ **BM25 + MMR**: Keyword relevance and diversity re-ranking algorithms
+- ✅ **Analytics Infrastructure**: PostgreSQL logging with full user interaction tracking
+
+**Next Focus**:
+- Performance optimization for reasoning system (latency/cost reduction)
+- User experience improvements (clarification UI, progress indicators)
+- Citation quality refinement
 
 ## Algorithm Documentation Practice
 
@@ -129,10 +153,10 @@ Test files use JSON format with test_type field and type-specific parameters.
    - After A/B testing results (update with findings)
 
 3. **Examples of Algorithms to Document**:
-   - BM25 (keyword relevance) ✅ IMPLEMENTED (Week 1-2)
-   - MMR (diversity re-ranking) ✅ IMPLEMENTED (Week 1-2)
-   - Intent detection (query classification for α/β and λ adjustment) ✅ IMPLEMENTED (Week 1-2)
-   - XGBoost (machine learning ranking) - Week 4+
+   - BM25 (keyword relevance) ✅ IMPLEMENTED
+   - MMR (diversity re-ranking) ✅ IMPLEMENTED
+   - Intent detection (query classification for α/β and λ adjustment) ✅ IMPLEMENTED
+   - XGBoost (machine learning ranking) ✅ IMPLEMENTED
    - Temporal boosting (recency scoring) - Partially implemented
    - Vector similarity (embedding-based) - Existing
 
