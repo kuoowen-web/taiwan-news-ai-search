@@ -35,16 +35,18 @@ class AnalystAgent(BaseReasoningAgent):
         query: str,
         formatted_context: str,
         mode: str,
-        temporal_context: Optional[Dict[str, Any]] = None
+        temporal_context: Optional[Dict[str, Any]] = None,
+        enable_kg: bool = False
     ) -> AnalystResearchOutput:
         """
-        Enhanced research with optional argument graph generation.
+        Enhanced research with optional argument graph generation and knowledge graph.
 
         Args:
             query: User's research question
             formatted_context: Pre-formatted context string with [1], [2] IDs
             mode: Research mode (strict, discovery, monitor)
             temporal_context: Optional temporal information (time range, etc.)
+            enable_kg: Enable knowledge graph generation (per-request override)
 
         Returns:
             AnalystResearchOutput (or Enhanced version if feature enabled)
@@ -52,8 +54,11 @@ class AnalystAgent(BaseReasoningAgent):
         # Import CONFIG here to avoid circular dependency
         from core.config import CONFIG
 
-        # Check feature flag
+        # Check feature flags (CONFIG as default, parameter overrides for KG)
         enable_graphs = CONFIG.reasoning_params.get("features", {}).get("argument_graphs", False)
+        # enable_kg is now a parameter (per-request control)
+
+        self.logger.info(f"Analyst.research() - enable_kg={enable_kg}, enable_graphs={enable_graphs}")
 
         # Build the system prompt from PDF (pages 7-10)
         system_prompt = self._build_research_prompt(
@@ -61,15 +66,22 @@ class AnalystAgent(BaseReasoningAgent):
             formatted_context=formatted_context,
             mode=mode,
             temporal_context=temporal_context,
-            enable_argument_graph=enable_graphs  # NEW parameter
+            enable_argument_graph=enable_graphs,  # Phase 2
+            enable_knowledge_graph=enable_kg  # Phase KG
         )
 
-        # Choose schema based on feature flag (Gemini Issue 2: Dynamic schema selection)
-        if enable_graphs:
+        # Choose schema based on feature flags (dynamic schema selection)
+        if enable_kg:
+            from reasoning.schemas_enhanced import AnalystResearchOutputEnhancedKG
+            response_schema = AnalystResearchOutputEnhancedKG
+            self.logger.info("Using AnalystResearchOutputEnhancedKG schema (with KG)")
+        elif enable_graphs:
             from reasoning.schemas_enhanced import AnalystResearchOutputEnhanced
             response_schema = AnalystResearchOutputEnhanced
+            self.logger.info("Using AnalystResearchOutputEnhanced schema (no KG)")
         else:
             response_schema = AnalystResearchOutput
+            self.logger.info("Using basic AnalystResearchOutput schema")
 
         # Call LLM with validation
         result = await self.call_llm_validated(
@@ -81,6 +93,10 @@ class AnalystAgent(BaseReasoningAgent):
         # Validate argument graph if present
         if hasattr(result, 'argument_graph') and result.argument_graph:
             self._validate_argument_graph(result.argument_graph, result.citations_used)
+
+        # Validate knowledge graph if present (Phase KG)
+        if hasattr(result, 'knowledge_graph') and result.knowledge_graph:
+            self._validate_knowledge_graph(result.knowledge_graph, result.citations_used)
 
         return result
 
@@ -123,7 +139,8 @@ class AnalystAgent(BaseReasoningAgent):
         formatted_context: str,
         mode: str,
         temporal_context: Optional[Dict[str, Any]] = None,
-        enable_argument_graph: bool = False
+        enable_argument_graph: bool = False,
+        enable_knowledge_graph: bool = False
     ) -> str:
         """
         Build research prompt from PDF System Prompt (pages 7-10).
@@ -134,6 +151,7 @@ class AnalystAgent(BaseReasoningAgent):
             mode: Research mode (strict, discovery, monitor)
             temporal_context: Optional time range information
             enable_argument_graph: Enable argument graph generation (Phase 2)
+            enable_knowledge_graph: Enable knowledge graph generation (Phase KG)
 
         Returns:
             Complete system prompt string
@@ -353,9 +371,202 @@ class AnalystAgent(BaseReasoningAgent):
    - `medium`: 單一 Tier 2 或多個 Tier 3
    - `low`: 僅有 Tier 4-5 或推測性陳述
 
-**重要**：如果資料不足以建構圖譜，可以將 `argument_graph` 設為 `null` 或空陣列 `[]`。系統會正常運作。
+5. **depends_on 填寫規則**（Phase 4 - 推論鏈追蹤）：
+   - **基礎事實**（直接引用來源）：`depends_on: []`
+   - **推論步驟**（基於其他論點）：`depends_on: ["node_id_1", "node_id_2"]`
+   - **防呆機制**：
+     * No Forward References: 節點只能依賴已經生成過的節點
+     * 避免循環依賴（A 依賴 B，B 依賴 A）
+     * 不確定時留空，不要猜測
+
+   範例：
+   ```json
+   [
+     {
+       "node_id": "abc-123",
+       "claim": "台積電高雄廠延後至2026年量產",
+       "reasoning_type": "induction",
+       "confidence": "high",
+       "confidence_score": 8.5,
+       "depends_on": []  // 基礎事實
+     },
+     {
+       "node_id": "def-456",
+       "claim": "延後原因可能是設備供應鏈問題",
+       "reasoning_type": "abduction",
+       "confidence": "medium",
+       "confidence_score": 5.0,
+       "depends_on": ["abc-123"]  // 依賴步驟1
+     }
+   ]
+   ```
+
+6. **Atomic Claims（原子化主張）原則**：
+   - 每個 ArgumentNode 應盡量只包含**一個邏輯判斷**或**一個證據引用**
+   - 避免把多個邏輯跳躍壓縮在一個 node 中
+   - 範例：
+     * ❌ 錯誤：「台積電良率高達85%，因此領先競爭對手20個百分點，將獲得更多訂單」（3個跳躍）
+     * ✅ 正確：分為3個節點
+       - Node 1: 「台積電良率85%」（事實）
+       - Node 2: 「領先競爭對手20個百分點」（演繹，depends_on: [Node1]）
+       - Node 3: 「將獲得更多訂單」（歸納，depends_on: [Node2]）
+
+7. **confidence_score 映射**（0-10 刻度）：
+   - `high` → 8-10（Tier 1-2 來源 + 多個獨立證實）
+   - `medium` → 4-7（單一 Tier 2 或多個 Tier 3）
+   - `low` → 0-3（僅 Tier 4-5 或推測性陳述）
+
+   精確分數由你根據證據強度判斷。
+
+8. **依賴關係範例**：
+   - **演繹**：Node 3 的結論 `depends_on: [Node1, Node2]`（大小前提）
+   - **歸納**：Node 4 的規律 `depends_on: [Node1, Node2, Node3]`（多個案例）
+   - **溯因**：Node 2 的解釋 `depends_on: [Node1]`（觀察現象）
+
+**重要**：
+- **argument_graph 不僅限於因果關係**。任何有邏輯推論的報告都應該生成 argument_graph。
+- 包含：事實陳述、比較分析、趨勢觀察、專家觀點引用等都是有效的 ArgumentNode。
+- 只有在查詢結果是「純粹的單一事實查詢」（如「今天台北天氣」）時，才可以設為空陣列。
+- **預設應該生成 argument_graph**，而非預設為空。
+- 典型深度研究報告應包含 3-8 個 ArgumentNode。
 """
             prompt += graph_instructions
+
+        # Add knowledge graph instructions if enabled (Phase KG)
+        if enable_knowledge_graph:
+            kg_instructions = """
+---
+
+## 階段 2.7：知識圖譜生成（Entity-Relationship Graph - Phase KG）
+
+除了原有欄位外，新增 `knowledge_graph` 欄位：
+
+### 實體提取規則
+
+1. **識別核心實體**（可用類型）：
+   - **組織 (organization)**：台積電、Nvidia、政府機構
+   - **人物 (person)**：張忠謀、執行長、專家
+   - **事件 (event)**：高雄廠動土、技術發表會、政策公告
+   - **地點 (location)**：高雄、亞利桑那、台北
+   - **數據指標 (metric)**：2025年產能、股價、市占率
+   - **技術 (technology)**：生成式AI、區塊鏈、智慧物流系統
+   - **概念 (concept)**：生態圈、綠色物流、數位轉型
+   - **產品 (product)**：iPhone、Mo幣、RMN服務
+
+2. **證據要求**：每個實體必須有 `evidence_ids`（來自 citations_used）
+
+3. **屬性 (attributes)**：可選的額外資訊，例如 `{"industry": "半導體", "founded": "1987"}`
+
+### 關係提取規則
+
+1. **關係類型**：
+   - **因果關係 (causal)**：
+     - `causes`：A 導致 B（需要明確因果證據）
+     - `enables`：A 促成 B（間接因果）
+     - `prevents`：A 阻止 B
+   - **時序關係 (temporal)**：
+     - `precedes`：A 發生在 B 之前
+     - `concurrent`：A 與 B 同時發生
+   - **組織關係 (hierarchical)**：
+     - `part_of`：A 是 B 的一部分（子公司、部門）
+     - `owns`：A 擁有 B
+   - **關聯關係 (associative)**：
+     - `related_to`：A 與 B 相關（通用關係）
+
+2. **信心度判定**：
+   - `high`：Tier 1-2 明確陳述的關係
+   - `medium`：Tier 2 或基於推論的關係
+   - `low`：僅有 Tier 4-5 或高度推測
+
+3. **時間脈絡 (temporal_context)**：可選，記錄關係發生的時間，例如 `{"start": "2024-01", "end": "2024-12"}`
+
+### 輸出範例
+
+**重要規則**：
+- 每個 entity 都會自動生成一個 `entity_id`（UUID），你**不需要手動指定**
+- 在 `relationships` 中引用實體時，必須使用 `entity_id`（自動生成的 UUID），**不是** `name`
+- 系統會先處理 `entities` 陣列，為每個實體生成 UUID，然後你在 `relationships` 中引用這些 UUID
+
+**錯誤示範** ❌：
+```json
+{
+  "source_entity_id": "高雄廠",  // ❌ 錯誤：使用實體名稱
+  "target_entity_id": "台積電"   // ❌ 錯誤：使用實體名稱
+}
+```
+
+**正確示範** ✅：
+```json
+{
+  "entities": [
+    {
+      "entity_id": "ent-abc-123",  // ✅ 系統自動生成的 UUID
+      "name": "台積電",
+      "entity_type": "organization",
+      "description": "全球領先的半導體製造公司",
+      "evidence_ids": [1, 3],
+      "confidence": "high",
+      "attributes": {"industry": "半導體", "headquarters": "新竹"}
+    },
+    {
+      "entity_id": "ent-def-456",  // ✅ 系統自動生成的 UUID
+      "name": "高雄廠",
+      "entity_type": "location",
+      "description": "台積電在高雄的新廠區",
+      "evidence_ids": [1],
+      "confidence": "high",
+      "attributes": {"construction_start": "2024"}
+    },
+    {
+      "entity_id": "ent-ghi-789",  // ✅ 系統自動生成的 UUID
+      "name": "2026年量產",
+      "entity_type": "event",
+      "description": "高雄廠預計量產時間",
+      "evidence_ids": [3],
+      "confidence": "medium"
+    }
+  ],
+  "relationships": [
+    {
+      "source_entity_id": "ent-def-456",  // ✅ 正確：引用高雄廠的 entity_id (UUID)
+      "target_entity_id": "ent-abc-123",  // ✅ 正確：引用台積電的 entity_id (UUID)
+      "relation_type": "part_of",
+      "description": "高雄廠是台積電的一部分",
+      "evidence_ids": [1],
+      "confidence": "high"
+    },
+    {
+      "source_entity_id": "ent-def-456",  // ✅ 正確：引用高雄廠的 entity_id (UUID)
+      "target_entity_id": "ent-ghi-789",  // ✅ 正確：引用2026年量產的 entity_id (UUID)
+      "relation_type": "precedes",
+      "description": "高雄廠建設完成後將在2026年量產",
+      "evidence_ids": [3],
+      "confidence": "medium",
+      "temporal_context": {"expected": "2026"}
+    }
+  ]
+}
+```
+
+**實作技巧**：
+1. 先定義所有 `entities`，讓系統自動生成 `entity_id`
+2. 記下每個實體的 `entity_id`（或在心中標記其位置）
+3. 在 `relationships` 中使用這些 `entity_id` 建立關聯
+
+### 限制與建議
+
+- **最多 15 個實體、20 個關係**（保持可管理性）
+- **簡單查詢可提取 2-3 個實體**（如「台積電股價」僅需提取台積電、股價兩個實體）
+- **資料不適合圖譜化時，設為 `null`**（如純粹的意見問答）
+- **⚠️ CRITICAL: relationships 必須使用 entity_id (UUID)**
+  - ❌ 錯誤：`"source_entity_id": "台積電"` （實體名稱）
+  - ✅ 正確：`"source_entity_id": "ent-abc-123"` （entity_id/UUID）
+  - 系統會先為每個 entity 自動生成 `entity_id`，你在定義 relationships 時必須引用這些 UUID
+- **避免過度細分**（如「張忠謀的辦公室」不需要成為獨立實體）
+
+**重要**：知識圖譜是可選的。如果資料不足或查詢不適合圖譜化，可以將 `knowledge_graph` 設為 `null`。系統會正常運作。
+"""
+            prompt += kg_instructions
 
         return prompt
 
@@ -487,3 +698,31 @@ class AnalystAgent(BaseReasoningAgent):
                 self.logger.warning(f"Node {node.node_id[:8]} has invalid evidence_ids: {invalid}")
                 # Remove invalid citations
                 node.evidence_ids = [eid for eid in node.evidence_ids if eid in valid_citations]
+
+    def _validate_knowledge_graph(self, kg: 'KnowledgeGraph', valid_citations: List[int]) -> None:
+        """
+        Ensure knowledge graph cites only available sources (Phase KG).
+
+        Args:
+            kg: KnowledgeGraph object with entities and relationships
+            valid_citations: List of valid citation IDs from analyst
+
+        Side effects:
+            - Logs warnings for invalid evidence_ids
+            - Removes invalid citations from entities/relationships (in-place modification)
+        """
+        # Validate entities
+        for entity in kg.entities:
+            invalid = [eid for eid in entity.evidence_ids if eid not in valid_citations]
+            if invalid:
+                self.logger.warning(f"Entity '{entity.name}' has invalid evidence_ids: {invalid}")
+                # Remove invalid citations
+                entity.evidence_ids = [eid for eid in entity.evidence_ids if eid in valid_citations]
+
+        # Validate relationships
+        for rel in kg.relationships:
+            invalid = [eid for eid in rel.evidence_ids if eid not in valid_citations]
+            if invalid:
+                self.logger.warning(f"Relationship {rel.relationship_id[:8]} has invalid evidence_ids: {invalid}")
+                # Remove invalid citations
+                rel.evidence_ids = [eid for eid in rel.evidence_ids if eid in valid_citations]

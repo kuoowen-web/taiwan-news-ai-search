@@ -59,12 +59,18 @@ class CriticAgent(BaseReasoningAgent):
         if analyst_output and hasattr(analyst_output, 'argument_graph'):
             argument_graph = analyst_output.argument_graph
 
+        # Extract knowledge_graph if available (Phase KG)
+        knowledge_graph = None
+        if analyst_output and hasattr(analyst_output, 'knowledge_graph'):
+            knowledge_graph = analyst_output.knowledge_graph
+
         # Build the review prompt from PDF (pages 16-21)
         review_prompt = self._build_review_prompt(
             draft=draft,
             query=query,
             mode=mode,
             argument_graph=argument_graph,
+            knowledge_graph=knowledge_graph,  # Phase KG
             enable_structured_weaknesses=enable_structured
         )
 
@@ -110,6 +116,7 @@ class CriticAgent(BaseReasoningAgent):
         query: str,
         mode: str,
         argument_graph=None,
+        knowledge_graph=None,
         enable_structured_weaknesses: bool = False
     ) -> str:
         """
@@ -120,6 +127,7 @@ class CriticAgent(BaseReasoningAgent):
             query: Original user query
             mode: Research mode (strict, discovery, monitor)
             argument_graph: Optional argument graph from Analyst (Phase 2)
+            knowledge_graph: Optional knowledge graph from Analyst (Phase KG)
             enable_structured_weaknesses: Enable structured weakness detection (Phase 2)
 
         Returns:
@@ -334,6 +342,75 @@ class CriticAgent(BaseReasoningAgent):
 
             weakness_instructions = weakness_instructions.replace("{argument_graph}", graph_str)
             prompt += weakness_instructions
+
+        # Add knowledge graph validation instructions if present (Phase KG)
+        if knowledge_graph:
+            kg_validation_prompt = """
+---
+
+## 知識圖譜驗證 (Knowledge Graph Validation - Phase KG)
+
+Analyst 生成了一個知識圖譜 (Knowledge Graph)，包含實體 (entities) 和關係 (relationships)。請檢查以下內容：
+
+### 驗證項目
+
+1. **實體證據驗證**：
+   - 所有實體的 `evidence_ids` 是否有效（來自可用來源）？
+   - 實體類型是否正確（例如：台積電應為 `organization`，不是 `person`）？
+   - 實體描述是否準確且有證據支持？
+
+2. **關係邏輯驗證**：
+   - 所有關係的 `source_entity_id` 和 `target_entity_id` 是否引用存在的實體？
+   - 關係類型是否合理（例如：因果關係 `causes` 是否有邏輯支持）？
+   - 關係的 `evidence_ids` 是否有效？
+
+3. **信心度一致性**：
+   - 實體/關係的 `confidence` 是否與證據來源層級一致？
+   - `high`：應基於 Tier 1-2 來源
+   - `medium`：應基於 Tier 2-3 來源或推論
+   - `low`：Tier 4-5 來源或高度推測
+
+4. **Mode 合規性**：
+   - 在 **Strict Mode** 下，不應有基於 Tier 4-5 來源的高信心度實體/關係
+   - 在 **Monitor Mode** 下，應同時呈現官方與民間觀點的實體
+
+### 檢查的知識圖譜
+
+{knowledge_graph}
+
+### 輸出要求
+
+如果發現問題：
+- 將問題加入 `source_issues` 列表
+- 說明具體問題（如「實體 'XXX' 的 evidence_ids [5] 無效」）
+- 如果問題嚴重（如多個無效 evidence_ids），考慮將 `status` 設為 "REJECT"
+
+如果啟用了 `structured_weaknesses`，可以添加相關弱點（使用 `source_tier_violation` 類型）。
+
+**重要**：知識圖譜驗證是次要的，主要審查仍集中在草稿內容和論證邏輯上。
+"""
+            # Convert knowledge_graph to string for prompt
+            import json
+            kg_str = json.dumps({
+                "entities": [{
+                    "entity_id": e.entity_id,
+                    "name": e.name,
+                    "entity_type": e.entity_type,
+                    "evidence_ids": e.evidence_ids,
+                    "confidence": e.confidence
+                } for e in knowledge_graph.entities],
+                "relationships": [{
+                    "relationship_id": r.relationship_id,
+                    "source_entity_id": r.source_entity_id,
+                    "target_entity_id": r.target_entity_id,
+                    "relation_type": r.relation_type,
+                    "evidence_ids": r.evidence_ids,
+                    "confidence": r.confidence
+                } for r in knowledge_graph.relationships]
+            }, ensure_ascii=False, indent=2)
+
+            kg_validation_prompt = kg_validation_prompt.replace("{knowledge_graph}", kg_str)
+            prompt += kg_validation_prompt
 
         return prompt
 

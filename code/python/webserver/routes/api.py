@@ -312,6 +312,19 @@ async def deep_research_handler(request: web.Request) -> web.Response:
                 "methodology": result.get('methodology_note', ''),
                 "sources": result.get('sources_used', [])
             }
+
+            # Extract argument_graph and reasoning_chain_analysis from schema_object (Phase 4)
+            # These are stored in the first item's schema_object by the orchestrator
+            items = result.get('items', [])
+            if items and len(items) > 0:
+                schema_obj = items[0].get('schema_object', {})
+                if schema_obj.get('argument_graph'):
+                    final_message['argument_graph'] = schema_obj['argument_graph']
+                if schema_obj.get('reasoning_chain_analysis'):
+                    final_message['reasoning_chain_analysis'] = schema_obj['reasoning_chain_analysis']
+                if schema_obj.get('knowledge_graph'):
+                    final_message['knowledge_graph'] = schema_obj['knowledge_graph']
+
             await wrapper.write_stream(final_message)
 
         # Close the stream

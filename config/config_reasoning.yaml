@@ -1,7 +1,7 @@
 reasoning:
   enabled: true
   max_iterations: 3
-  analyst_timeout: 60
+  analyst_timeout: 120  # Increased from 60s for KG + argument graph generation
   critic_timeout: 30
   writer_timeout: 90  # Increased from 45s to 90s for long-form generation (Phase 3)
 
@@ -11,6 +11,7 @@ reasoning:
     plan_and_write: true      # Phase 3: Plan-and-Write for long reports (2000+ words)
     argument_graphs: true     # Phase 2: Structured argument decomposition
     structured_critique: true # Phase 2: Structured weakness detection
+    knowledge_graph_generation: true  # Phase KG: Entity-Relationship Knowledge Graph
 
   # Auto-REJECT thresholds for Phase 2 structured critique
   critique_thresholds:

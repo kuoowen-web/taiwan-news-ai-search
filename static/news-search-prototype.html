@@ -237,6 +237,53 @@
             color: #1d4ed8;
         }
 
+        /* KG Toggle */
+        .kg-toggle-container {
+            margin-top: 12px;
+            padding: 10px 12px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+        }
+
+        .kg-toggle-label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .kg-toggle-checkbox {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .kg-toggle-text {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: #374151;
+            flex-wrap: wrap;
+        }
+
+        .kg-toggle-icon {
+            font-size: 16px;
+        }
+
+        .kg-toggle-hint {
+            font-size: 11px;
+            color: #6b7280;
+            font-style: italic;
+        }
+
+        .kg-toggle-label:hover .kg-toggle-text {
+            color: #2563eb;
+        }
+
 
         /* Main Content */
         main {
@@ -345,6 +392,152 @@
             font-weight: 500;
             font-size: 15px;
             flex: 1;
+        }
+
+        /* Knowledge Graph Display (Phase KG) */
+        .kg-display-container {
+            background: white;
+            border-radius: 12px;
+            padding: 0;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            border: 2px solid #e0e7ff;
+        }
+
+        .kg-display-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            background: #f8fafc;
+            border-bottom: 1px solid #e5e7eb;
+            border-radius: 12px 12px 0 0;
+        }
+
+        .kg-display-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        .kg-display-icon {
+            font-size: 20px;
+        }
+
+        .kg-display-metadata {
+            font-size: 12px;
+            font-weight: 400;
+            color: #64748b;
+            margin-left: 8px;
+        }
+
+        .kg-toggle-button {
+            background: transparent;
+            border: 1px solid #cbd5e1;
+            color: #64748b;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+
+        .kg-toggle-button:hover {
+            background: #f1f5f9;
+            color: #475569;
+            border-color: #94a3b8;
+        }
+
+        .kg-display-content {
+            padding: 20px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .kg-display-content.collapsed {
+            display: none;
+        }
+
+        .kg-display-empty {
+            padding: 40px 20px;
+            text-align: center;
+            color: #64748b;
+            font-size: 14px;
+        }
+
+        .kg-section {
+            margin-bottom: 20px;
+        }
+
+        .kg-section-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #475569;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .kg-item {
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            background: #f8fafc;
+            border-left: 3px solid #cbd5e1;
+            border-radius: 4px;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .kg-item-name {
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        .kg-item-type {
+            display: inline-block;
+            padding: 2px 8px;
+            background: #e0e7ff;
+            color: #4338ca;
+            border-radius: 4px;
+            font-size: 11px;
+            margin-left: 8px;
+        }
+
+        .kg-item-confidence {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            margin-left: 4px;
+        }
+
+        .kg-item-confidence.high {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .kg-item-confidence.medium {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .kg-item-confidence.low {
+            background: #e5e7eb;
+            color: #6b7280;
+        }
+
+        .kg-item-desc {
+            color: #64748b;
+            margin-top: 4px;
+        }
+
+        .kg-relationship-arrow {
+            color: #2563eb;
+            margin: 0 6px;
         }
 
         /* Chat UI for Free Conversation Mode */
@@ -1266,7 +1459,148 @@
             border-bottom-color: #1d4ed8;
             background: #eff6ff;
         }
+        /* Knowledge Graph D3 Visualization (Phase KG Enhanced) */
+        .kg-graph-container {
+            width: 100%;
+            height: 400px;
+            background: #fafbfc;
+            border-radius: 8px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .kg-graph-container svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .kg-view-toggle {
+            display: flex;
+            gap: 4px;
+            background: #f1f5f9;
+            padding: 4px;
+            border-radius: 8px;
+        }
+
+        .kg-view-btn {
+            background: transparent;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #64748b;
+            transition: all 0.2s;
+        }
+
+        .kg-view-btn.active {
+            background: white;
+            color: #1e293b;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .kg-view-btn:hover:not(.active) {
+            color: #475569;
+        }
+
+        .kg-node {
+            cursor: pointer;
+        }
+
+        .kg-node circle {
+            stroke: white;
+            stroke-width: 2px;
+            transition: all 0.2s;
+        }
+
+        .kg-node:hover circle {
+            stroke-width: 3px;
+            filter: brightness(1.1);
+        }
+
+        .kg-node text {
+            font-size: 11px;
+            fill: #1e293b;
+            pointer-events: none;
+            text-anchor: middle;
+        }
+
+        .kg-link {
+            stroke-opacity: 0.6;
+            fill: none;
+        }
+
+        .kg-link-label {
+            font-size: 10px;
+            fill: #64748b;
+            pointer-events: none;
+        }
+
+        .kg-tooltip {
+            position: absolute;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            font-size: 13px;
+            max-width: 300px;
+            z-index: 1000;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .kg-tooltip.visible {
+            opacity: 1;
+        }
+
+        .kg-tooltip-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: #1e293b;
+        }
+
+        .kg-tooltip-type {
+            display: inline-block;
+            padding: 2px 6px;
+            background: #e0e7ff;
+            color: #4338ca;
+            border-radius: 4px;
+            font-size: 11px;
+            margin-bottom: 6px;
+        }
+
+        .kg-tooltip-desc {
+            color: #64748b;
+            line-height: 1.5;
+        }
+
+        .kg-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            padding: 12px 0;
+            border-top: 1px solid #e5e7eb;
+            margin-top: 12px;
+        }
+
+        .kg-legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: #64748b;
+        }
+
+        .kg-legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
     </style>
+    <!-- D3.js for Knowledge Graph Visualization -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
 </head>
 <body>
     <header>
@@ -1338,6 +1672,18 @@
                             </div>
                         </div>
 
+                        <!-- KG Toggle (visible only when Deep Research is selected) -->
+                        <div class="kg-toggle-container" id="kgToggleContainer" style="display: none;">
+                            <label class="kg-toggle-label">
+                                <input type="checkbox" id="kgToggle" class="kg-toggle-checkbox">
+                                <span class="kg-toggle-text">
+                                    <span class="kg-toggle-icon">📊</span>
+                                    啟用知識圖譜 (Knowledge Graph)
+                                    <span class="kg-toggle-hint">推論時間約增加 2-3 秒</span>
+                                </span>
+                            </label>
+                        </div>
+
                         <button class="btn-search" id="btnSearch">搜尋</button>
                     </div>
                 </div>
@@ -1351,6 +1697,40 @@
 
             <!-- Results Section -->
             <div class="results-section" id="resultsSection">
+                <!-- Knowledge Graph Display (Phase KG Enhanced) -->
+                <div class="kg-display-container" id="kgDisplayContainer" style="display: none;">
+                    <div class="kg-display-header">
+                        <div class="kg-display-title">
+                            <span class="kg-display-icon">📊</span>
+                            <span>知識圖譜</span>
+                            <span class="kg-display-metadata" id="kgMetadata"></span>
+                        </div>
+                        <div style="display: flex; gap: 12px; align-items: center;">
+                            <!-- View Toggle -->
+                            <div class="kg-view-toggle" id="kgViewToggle">
+                                <button class="kg-view-btn active" data-view="graph">圖形</button>
+                                <button class="kg-view-btn" data-view="list">列表</button>
+                            </div>
+                            <button class="kg-toggle-button" id="kgToggleButton">
+                                <span id="kgToggleIcon">▼</span> 收起
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Graph View -->
+                    <div class="kg-graph-container" id="kgGraphView">
+                        <div class="kg-tooltip" id="kgTooltip"></div>
+                    </div>
+                    <!-- List View -->
+                    <div class="kg-display-content" id="kgDisplayContent" style="display: none;">
+                        <!-- KG list content will be populated here -->
+                    </div>
+                    <!-- Legend -->
+                    <div class="kg-legend" id="kgLegend" style="padding: 12px 20px;"></div>
+                    <div class="kg-display-empty" id="kgDisplayEmpty" style="display: none;">
+                        ℹ️ 此查詢不適合生成知識圖譜（例如：純粹的意見問答或單一數據查詢）
+                    </div>
+                </div>
+
                 <!-- Chat Container for Free Conversation Mode -->
                 <div class="chat-container" id="chatContainer">
                     <div class="chat-messages" id="chatMessages">
@@ -1624,12 +2004,15 @@
                     chatInputContainer.style.display = 'block';
                 }
 
-                // Show/hide research mode selector based on mode
+                // Show/hide research mode selector and KG toggle based on mode
                 const researchModeSelector = document.getElementById('researchModeSelector');
+                const kgToggleContainer = document.getElementById('kgToggleContainer');
                 if (newMode === 'deep_research') {
                     researchModeSelector.style.display = 'block';
+                    kgToggleContainer.style.display = 'block';
                 } else {
                     researchModeSelector.style.display = 'none';
+                    kgToggleContainer.style.display = 'none';
                 }
             });
         });
@@ -2460,6 +2843,13 @@
                     console.log('[Deep Research] Comprehensive search enabled (high diversity)');
                 }
 
+                // Add enable_kg flag (Phase KG)
+                const kgToggle = document.getElementById('kgToggle');
+                if (kgToggle && kgToggle.checked) {
+                    deepResearchUrl.searchParams.append('enable_kg', 'true');
+                    console.log('[Deep Research] Knowledge Graph generation enabled');
+                }
+
                 // Add conversation_id for context continuity across modes
                 if (currentConversationId) {
                     deepResearchUrl.searchParams.append('conversation_id', currentConversationId);
@@ -2559,10 +2949,27 @@
             console.log('[Deep Research] Sources array:', metadata?.sources);
             console.log('[Deep Research] Sources count:', metadata?.sources?.length);
 
+            // Extract schema_object from content (Deep Research sends results in content array)
+            let schemaObj = null;
+            console.log('[Deep Research] metadata.content:', metadata?.content);
+            if (metadata?.content && Array.isArray(metadata.content) && metadata.content.length > 0) {
+                console.log('[Deep Research] First content item:', metadata.content[0]);
+                schemaObj = metadata.content[0].schema_object;
+                console.log('[Deep Research] Extracted schema_object:', schemaObj);
+            } else {
+                console.log('[Deep Research] No content array found, trying direct access');
+                // Try direct access for backward compatibility
+                schemaObj = metadata?.schema_object;
+                console.log('[Deep Research] Direct schema_object:', schemaObj);
+            }
+
             // Show results section
             resultsSection.classList.add('active');
 
-            // Clear and display report in listView
+            // Display Knowledge Graph if available (Phase KG)
+            displayKnowledgeGraph(schemaObj?.knowledge_graph || metadata?.knowledge_graph);
+
+            // Clear and display report in listView (MUST be before displayReasoningChain!)
             listView.innerHTML = '';
 
             // Create report container
@@ -2582,8 +2989,11 @@
             }
 
             reportContainer.innerHTML = reportHTML;
-
             listView.appendChild(reportContainer);
+
+            // Display Reasoning Chain if available (Phase 4) - AFTER report is added
+            displayReasoningChain(schemaObj?.argument_graph || metadata?.argument_graph,
+                                 schemaObj?.reasoning_chain_analysis || metadata?.reasoning_chain_analysis);
 
             // Add to conversation history (use savedQuery parameter)
             if (savedQuery) {
@@ -2598,6 +3008,730 @@
 
             console.log('[Deep Research] Results displayed successfully');
         }
+
+        // Knowledge Graph Display Functions (Phase KG Enhanced with D3.js)
+
+        // Entity type colors for D3 visualization
+        const KG_ENTITY_COLORS = {
+            'person': '#3b82f6',      // blue
+            'organization': '#8b5cf6', // purple
+            'event': '#f59e0b',        // amber
+            'location': '#10b981',     // emerald
+            'metric': '#ef4444',       // red
+            'technology': '#06b6d4',   // cyan
+            'concept': '#6366f1',      // indigo
+            'product': '#ec4899'       // pink
+        };
+
+        // Entity type labels
+        const KG_TYPE_LABELS = {
+            'person': '人物',
+            'organization': '組織',
+            'event': '事件',
+            'location': '地點',
+            'metric': '指標',
+            'technology': '技術',
+            'concept': '概念',
+            'product': '產品'
+        };
+
+        // Relation type labels
+        const KG_RELATION_LABELS = {
+            'causes': '導致',
+            'enables': '促成',
+            'prevents': '阻止',
+            'precedes': '先於',
+            'concurrent': '同時',
+            'part_of': '屬於',
+            'owns': '擁有',
+            'related_to': '相關'
+        };
+
+        // Global KG data store for view switching
+        let currentKGData = null;
+        let kgSimulation = null;
+
+        function displayKnowledgeGraph(kg) {
+            const container = document.getElementById('kgDisplayContainer');
+            const graphView = document.getElementById('kgGraphView');
+            const listContent = document.getElementById('kgDisplayContent');
+            const empty = document.getElementById('kgDisplayEmpty');
+            const metadata = document.getElementById('kgMetadata');
+            const legend = document.getElementById('kgLegend');
+
+            if (!kg || (!kg.entities || kg.entities.length === 0)) {
+                container.style.display = 'none';
+                console.log('[KG] No knowledge graph data to display');
+                return;
+            }
+
+            // Store KG data globally
+            currentKGData = kg;
+
+            // Show container
+            container.style.display = 'block';
+
+            // Update metadata
+            const entityCount = kg.entities?.length || 0;
+            const relCount = kg.relationships?.length || 0;
+            const timestamp = kg.metadata?.generated_at ? new Date(kg.metadata.generated_at).toLocaleTimeString('zh-TW', {hour: '2-digit', minute: '2-digit'}) : '';
+            metadata.textContent = `${entityCount} 個實體 • ${relCount} 個關係${timestamp ? ' • 生成於 ' + timestamp : ''}`;
+
+            // Render list view content
+            renderKGListView(kg, listContent);
+
+            // Render graph view with D3
+            renderKGGraphView(kg, graphView);
+
+            // Render legend
+            renderKGLegend(kg, legend);
+
+            // Setup view toggle
+            setupKGViewToggle();
+
+            empty.style.display = 'none';
+            console.log('[KG] Knowledge graph displayed successfully with D3 visualization');
+        }
+
+        function renderKGListView(kg, container) {
+            let html = '';
+
+            // Entities section
+            if (kg.entities && kg.entities.length > 0) {
+                html += '<div class="kg-section">';
+                html += `<div class="kg-section-title">實體 (${kg.entities.length})</div>`;
+                kg.entities.forEach(entity => {
+                    const typeLabel = KG_TYPE_LABELS[entity.entity_type] || entity.entity_type;
+                    html += '<div class="kg-item">';
+                    html += `<div><span class="kg-item-name">${escapeHTML(entity.name)}</span>`;
+                    html += `<span class="kg-item-type">${typeLabel}</span>`;
+                    html += `<span class="kg-item-confidence ${entity.confidence}">${entity.confidence}</span>`;
+                    html += '</div>';
+                    if (entity.description) {
+                        html += `<div class="kg-item-desc">${escapeHTML(entity.description)}</div>`;
+                    }
+                    html += '</div>';
+                });
+                html += '</div>';
+            }
+
+            // Relationships section
+            if (kg.relationships && kg.relationships.length > 0) {
+                html += '<div class="kg-section">';
+                html += `<div class="kg-section-title">關係 (${kg.relationships.length})</div>`;
+
+                const entityMap = {};
+                if (kg.entities) {
+                    kg.entities.forEach(e => entityMap[e.entity_id] = e.name);
+                }
+
+                kg.relationships.forEach(rel => {
+                    const relationLabel = KG_RELATION_LABELS[rel.relation_type] || rel.relation_type;
+                    const sourceName = entityMap[rel.source_entity_id] || '未知';
+                    const targetName = entityMap[rel.target_entity_id] || '未知';
+
+                    html += '<div class="kg-item">';
+                    html += `<div>${escapeHTML(sourceName)} <span class="kg-relationship-arrow">→</span> ${escapeHTML(targetName)}`;
+                    html += `<span class="kg-item-type">${relationLabel}</span>`;
+                    html += `<span class="kg-item-confidence ${rel.confidence}">${rel.confidence}</span>`;
+                    html += '</div>';
+                    if (rel.description) {
+                        html += `<div class="kg-item-desc">${escapeHTML(rel.description)}</div>`;
+                    }
+                    html += '</div>';
+                });
+                html += '</div>';
+            }
+
+            container.innerHTML = html;
+        }
+
+        function renderKGGraphView(kg, container) {
+            // Clear previous SVG
+            d3.select(container).select('svg').remove();
+
+            // Preserve tooltip
+            const tooltip = document.getElementById('kgTooltip');
+
+            const width = container.clientWidth || 600;
+            const height = container.clientHeight || 400;
+
+            // Create SVG
+            const svg = d3.select(container)
+                .append('svg')
+                .attr('width', width)
+                .attr('height', height);
+
+            // Add zoom behavior
+            const g = svg.append('g');
+            const zoom = d3.zoom()
+                .scaleExtent([0.3, 3])
+                .on('zoom', (event) => {
+                    g.attr('transform', event.transform);
+                });
+            svg.call(zoom);
+
+            // Build entity map
+            const entityMap = {};
+            kg.entities.forEach(e => entityMap[e.entity_id] = e);
+
+            // Prepare nodes and links for D3
+            const nodes = kg.entities.map(e => ({
+                id: e.entity_id,
+                name: e.name,
+                type: e.entity_type,
+                description: e.description,
+                confidence: e.confidence
+            }));
+
+            const nodeIds = new Set(nodes.map(n => n.id));
+            const links = (kg.relationships || [])
+                .filter(r => nodeIds.has(r.source_entity_id) && nodeIds.has(r.target_entity_id))
+                .map(r => ({
+                    source: r.source_entity_id,
+                    target: r.target_entity_id,
+                    type: r.relation_type,
+                    description: r.description,
+                    confidence: r.confidence
+                }));
+
+            // Create force simulation
+            if (kgSimulation) {
+                kgSimulation.stop();
+            }
+
+            kgSimulation = d3.forceSimulation(nodes)
+                .force('link', d3.forceLink(links).id(d => d.id).distance(120))
+                .force('charge', d3.forceManyBody().strength(-300))
+                .force('center', d3.forceCenter(width / 2, height / 2))
+                .force('collision', d3.forceCollide().radius(40));
+
+            // Draw arrow markers for directed edges
+            svg.append('defs').selectAll('marker')
+                .data(['arrow'])
+                .enter().append('marker')
+                .attr('id', 'arrow')
+                .attr('viewBox', '0 -5 10 10')
+                .attr('refX', 25)
+                .attr('refY', 0)
+                .attr('markerWidth', 6)
+                .attr('markerHeight', 6)
+                .attr('orient', 'auto')
+                .append('path')
+                .attr('fill', '#94a3b8')
+                .attr('d', 'M0,-5L10,0L0,5');
+
+            // Draw links
+            const link = g.append('g')
+                .selectAll('line')
+                .data(links)
+                .enter().append('line')
+                .attr('class', 'kg-link')
+                .attr('stroke', '#94a3b8')
+                .attr('stroke-width', 2)
+                .attr('marker-end', 'url(#arrow)');
+
+            // Draw link labels
+            const linkLabel = g.append('g')
+                .selectAll('text')
+                .data(links)
+                .enter().append('text')
+                .attr('class', 'kg-link-label')
+                .text(d => KG_RELATION_LABELS[d.type] || d.type);
+
+            // Draw nodes
+            const node = g.append('g')
+                .selectAll('g')
+                .data(nodes)
+                .enter().append('g')
+                .attr('class', 'kg-node')
+                .call(d3.drag()
+                    .on('start', dragStarted)
+                    .on('drag', dragged)
+                    .on('end', dragEnded));
+
+            // Node circles
+            node.append('circle')
+                .attr('r', 18)
+                .attr('fill', d => KG_ENTITY_COLORS[d.type] || '#6b7280');
+
+            // Node labels
+            node.append('text')
+                .attr('dy', 30)
+                .text(d => d.name.length > 10 ? d.name.substring(0, 10) + '...' : d.name);
+
+            // Node hover effects
+            node.on('mouseenter', function(event, d) {
+                // Highlight connected links
+                link.attr('stroke', l => (l.source.id === d.id || l.target.id === d.id) ? '#3b82f6' : '#94a3b8')
+                    .attr('stroke-width', l => (l.source.id === d.id || l.target.id === d.id) ? 3 : 2);
+
+                // Show tooltip
+                const typeLabel = KG_TYPE_LABELS[d.type] || d.type;
+                tooltip.innerHTML = `
+                    <div class="kg-tooltip-title">${escapeHTML(d.name)}</div>
+                    <div class="kg-tooltip-type">${typeLabel}</div>
+                    ${d.description ? `<div class="kg-tooltip-desc">${escapeHTML(d.description)}</div>` : ''}
+                `;
+                tooltip.classList.add('visible');
+                tooltip.style.left = (event.offsetX + 15) + 'px';
+                tooltip.style.top = (event.offsetY - 10) + 'px';
+            })
+            .on('mousemove', function(event) {
+                tooltip.style.left = (event.offsetX + 15) + 'px';
+                tooltip.style.top = (event.offsetY - 10) + 'px';
+            })
+            .on('mouseleave', function() {
+                link.attr('stroke', '#94a3b8').attr('stroke-width', 2);
+                tooltip.classList.remove('visible');
+            });
+
+            // Update positions on tick
+            kgSimulation.on('tick', () => {
+                link
+                    .attr('x1', d => d.source.x)
+                    .attr('y1', d => d.source.y)
+                    .attr('x2', d => d.target.x)
+                    .attr('y2', d => d.target.y);
+
+                linkLabel
+                    .attr('x', d => (d.source.x + d.target.x) / 2)
+                    .attr('y', d => (d.source.y + d.target.y) / 2);
+
+                node.attr('transform', d => `translate(${d.x},${d.y})`);
+            });
+
+            // Drag functions
+            function dragStarted(event, d) {
+                if (!event.active) kgSimulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+            }
+
+            function dragged(event, d) {
+                d.fx = event.x;
+                d.fy = event.y;
+            }
+
+            function dragEnded(event, d) {
+                if (!event.active) kgSimulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+            }
+        }
+
+        function renderKGLegend(kg, container) {
+            // Get unique entity types
+            const types = [...new Set(kg.entities.map(e => e.entity_type))];
+
+            let html = '';
+            types.forEach(type => {
+                const color = KG_ENTITY_COLORS[type] || '#6b7280';
+                const label = KG_TYPE_LABELS[type] || type;
+                html += `
+                    <div class="kg-legend-item">
+                        <div class="kg-legend-color" style="background: ${color};"></div>
+                        <span>${label}</span>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function setupKGViewToggle() {
+            const toggleContainer = document.getElementById('kgViewToggle');
+            const graphView = document.getElementById('kgGraphView');
+            const listView = document.getElementById('kgDisplayContent');
+
+            if (!toggleContainer) return;
+
+            toggleContainer.querySelectorAll('.kg-view-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const view = this.getAttribute('data-view');
+
+                    // Update button states
+                    toggleContainer.querySelectorAll('.kg-view-btn').forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+
+                    // Toggle views
+                    if (view === 'graph') {
+                        graphView.style.display = 'block';
+                        listView.style.display = 'none';
+                        // Re-render graph if needed (handles resize)
+                        if (currentKGData && graphView.clientWidth > 0) {
+                            renderKGGraphView(currentKGData, graphView);
+                        }
+                    } else {
+                        graphView.style.display = 'none';
+                        listView.style.display = 'block';
+                    }
+
+                    console.log('[KG] Switched to', view, 'view');
+                });
+            });
+        }
+
+        // ============================================================
+        // Reasoning Chain Visualization (Phase 4 - Enhanced)
+        // ============================================================
+
+        /**
+         * Display reasoning chain with dependency tracking
+         */
+        function displayReasoningChain(argumentGraph, chainAnalysis) {
+            console.log('[Reasoning Chain] Called with:', argumentGraph, chainAnalysis);
+
+            if (!argumentGraph || argumentGraph.length === 0) {
+                console.log('[Reasoning Chain] No argument graph data, skipping render');
+                return;
+            }
+
+            console.log('[Reasoning Chain] Rendering', argumentGraph.length, 'nodes');
+
+            // Build node map
+            const nodeMap = {};
+            argumentGraph.forEach(node => {
+                nodeMap[node.node_id] = node;
+            });
+
+            // Get topological order
+            let orderedNodes = argumentGraph;
+            if (chainAnalysis?.topological_order && chainAnalysis.topological_order.length > 0) {
+                orderedNodes = chainAnalysis.topological_order
+                    .map(id => nodeMap[id])
+                    .filter(node => node !== undefined);
+                console.log('[Reasoning Chain] Using topological order for rendering');
+            }
+
+            // Create collapsible container
+            const container = createReasoningChainContainer(orderedNodes, chainAnalysis);
+
+            // Render logic inconsistency warning
+            if (chainAnalysis?.logic_inconsistencies > 0) {
+                const warning = createLogicInconsistencyWarning(chainAnalysis.logic_inconsistencies);
+                container.querySelector('.reasoning-chain-content').prepend(warning);
+            }
+
+            // Render cycle warning
+            if (chainAnalysis?.has_cycles) {
+                const cycleAlert = createCycleWarning(chainAnalysis.cycle_details);
+                container.querySelector('.reasoning-chain-content').prepend(cycleAlert);
+            }
+
+            // Render critical nodes alert
+            if (chainAnalysis?.critical_nodes?.length > 0) {
+                const alert = createCriticalNodesAlert(chainAnalysis.critical_nodes, nodeMap);
+                container.querySelector('.reasoning-chain-content').prepend(alert);
+            }
+
+            // Render each node (with hover effects)
+            orderedNodes.forEach((node, i) => {
+                const nodeEl = renderArgumentNode(node, i + 1, nodeMap, chainAnalysis);
+                container.querySelector('.reasoning-chain-content').appendChild(nodeEl);
+            });
+
+            // Setup hover interactions
+            setupHoverInteractions(container, nodeMap);
+
+            // Insert before report
+            const listView = document.getElementById('listView');
+            const reportContainer = listView.querySelector('.deep-research-report');
+            if (reportContainer) {
+                listView.insertBefore(container, reportContainer);
+            } else {
+                listView.appendChild(container);
+            }
+        }
+
+        /**
+         * Create container with header and toggle
+         */
+        function createReasoningChainContainer(nodes, chainAnalysis) {
+            const container = document.createElement('div');
+            container.className = 'reasoning-chain-container';
+            container.style.cssText = `
+                background: #f8f9fa;
+                border-left: 4px solid #6366f1;
+                border-radius: 8px;
+                padding: 20px;
+                margin-bottom: 24px;
+                max-width: 900px;
+                margin-left: auto;
+                margin-right: auto;
+            `;
+
+            const header = document.createElement('div');
+            header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; cursor: pointer;';
+            header.innerHTML = `
+                <div style="font-size: 18px; font-weight: 700; color: #1a1a1a;">
+                    🧠 推論鏈追蹤
+                    <span style="color: #666; font-size: 14px; font-weight: 400;">
+                        (${nodes.length} 個推論步驟${chainAnalysis?.max_depth !== undefined ? `, 深度 ${chainAnalysis.max_depth}` : ''})
+                    </span>
+                </div>
+                <button class="btn-toggle-chain" style="background: white; border: 1px solid #ddd; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px;">
+                    展開
+                </button>
+            `;
+
+            const content = document.createElement('div');
+            content.className = 'reasoning-chain-content';
+            content.style.display = 'none';
+
+            // Toggle functionality
+            const toggleBtn = header.querySelector('.btn-toggle-chain');
+            header.addEventListener('click', () => {
+                const isHidden = content.style.display === 'none';
+                content.style.display = isHidden ? 'block' : 'none';
+                toggleBtn.textContent = isHidden ? '收起' : '展開';
+            });
+
+            container.appendChild(header);
+            container.appendChild(content);
+
+            return container;
+        }
+
+        /**
+         * Create logic inconsistency warning
+         */
+        function createLogicInconsistencyWarning(count) {
+            const alert = document.createElement('div');
+            alert.style.cssText = `
+                background: #fef3c7;
+                border-left: 4px solid #f59e0b;
+                padding: 12px 16px;
+                border-radius: 6px;
+                margin-bottom: 16px;
+            `;
+            alert.innerHTML = `
+                <div style="font-weight: 700; color: #92400e; margin-bottom: 4px;">⚠️ 邏輯一致性問題</div>
+                <div style="color: #78350f; font-size: 13px;">
+                    偵測到 ${count} 個推論步驟的信心度可能高於其前提（邏輯膨脹）。請檢視帶有 ⚠️ 標記的推論步驟。
+                </div>
+            `;
+            return alert;
+        }
+
+        /**
+         * Create cycle warning
+         */
+        function createCycleWarning(cycleDetails) {
+            const alert = document.createElement('div');
+            alert.style.cssText = `
+                background: #fee2e2;
+                border-left: 4px solid #dc2626;
+                padding: 12px 16px;
+                border-radius: 6px;
+                margin-bottom: 16px;
+            `;
+            alert.innerHTML = `
+                <div style="font-weight: 700; color: #991b1b; margin-bottom: 4px;">⚠️ 檢測到循環依賴</div>
+                <div style="color: #7f1d1d; font-size: 13px;">${cycleDetails || '推論鏈存在循環引用，可能影響可靠性'}</div>
+            `;
+            return alert;
+        }
+
+        /**
+         * Create critical nodes alert
+         */
+        function createCriticalNodesAlert(criticalNodes, nodeMap) {
+            const alert = document.createElement('div');
+            alert.style.cssText = `
+                background: #fef3c7;
+                border-left: 4px solid #f59e0b;
+                padding: 12px 16px;
+                border-radius: 6px;
+                margin-bottom: 16px;
+            `;
+
+            const criticalHtml = criticalNodes.map(critical => {
+                const node = nodeMap[critical.node_id];
+                if (!node) return '';
+                return `
+                    <div style="margin-bottom: 8px; color: #78350f;">
+                        <strong>「${node.claim.substring(0, 50)}${node.claim.length > 50 ? '...' : ''}」</strong>
+                        影響 ${critical.affects_count} 個後續推論
+                        ${critical.criticality_reason ? `<br><span style="font-size: 13px;">└─ ${critical.criticality_reason}</span>` : ''}
+                    </div>
+                `;
+            }).join('');
+
+            alert.innerHTML = `
+                <div style="font-weight: 700; color: #92400e; margin-bottom: 8px;">🚨 關鍵薄弱環節</div>
+                ${criticalHtml}
+            `;
+
+            return alert;
+        }
+
+        /**
+         * Render single argument node with full details
+         */
+        function renderArgumentNode(node, stepNumber, nodeMap, chainAnalysis) {
+            const nodeEl = document.createElement('div');
+            nodeEl.className = 'argument-node';
+            nodeEl.id = `node-${node.node_id}`;
+            nodeEl.setAttribute('data-node-id', node.node_id);
+            nodeEl.setAttribute('data-depends', JSON.stringify(node.depends_on || []));
+
+            // Find nodes that depend on this one (for hover highlight)
+            const affectedIds = [];
+            Object.values(nodeMap).forEach(n => {
+                if (n.depends_on && n.depends_on.includes(node.node_id)) {
+                    affectedIds.push(n.node_id);
+                }
+            });
+            nodeEl.setAttribute('data-affects', JSON.stringify(affectedIds));
+
+            nodeEl.style.cssText = `
+                background: white;
+                border: 2px solid #e5e7eb;
+                border-radius: 8px;
+                padding: 16px;
+                margin-bottom: 12px;
+                transition: all 0.2s ease;
+            `;
+
+            const emoji = {deduction: '🔷', induction: '🔶', abduction: '🔸'}[node.reasoning_type] || '💭';
+            const label = {deduction: '演繹', induction: '歸納', abduction: '溯因'}[node.reasoning_type];
+            const score = node.confidence_score ?? inferScore(node.confidence);
+            const scoreColor = score >= 7 ? '#16a34a' : score >= 4 ? '#f59e0b' : '#dc2626';
+
+            // Get impact info
+            let impactInfo = '';
+            if (chainAnalysis?.critical_nodes) {
+                const critical = chainAnalysis.critical_nodes.find(c => c.node_id === node.node_id);
+                if (critical && critical.affects_count > 0) {
+                    impactInfo = `<div style="color: #dc2626; font-size: 13px; margin-top: 8px;">
+                        ⚡ 影響 ${critical.affects_count} 個後續推論
+                    </div>`;
+                }
+            }
+
+            // Logic warnings
+            let warningsHtml = '';
+            if (node.logic_warnings && node.logic_warnings.length > 0) {
+                warningsHtml = node.logic_warnings.map(w => `
+                    <div style="color: #f59e0b; font-size: 13px; margin-top: 4px;">
+                        ⚠️ ${w}
+                    </div>
+                `).join('');
+            }
+
+            // Render dependencies
+            let depsHtml = '';
+            if (node.depends_on && node.depends_on.length > 0) {
+                const depLabels = node.depends_on.map(depId => {
+                    const depIndex = Object.keys(nodeMap).indexOf(depId) + 1;
+                    return `步驟 ${depIndex}`;
+                });
+                depsHtml = `<div style="color: #6366f1; font-size: 13px; margin-top: 8px;">
+                    ↑ 依賴：${depLabels.join(', ')}
+                </div>`;
+            }
+
+            // Evidence
+            const evidenceHtml = node.evidence_ids && node.evidence_ids.length > 0
+                ? `<div style="color: #666; font-size: 13px; margin-top: 4px;">
+                       證據來源：${node.evidence_ids.map(id => `<span style="background: #e5e7eb; padding: 2px 6px; border-radius: 3px; margin-right: 4px;">[${id}]</span>`).join('')}
+                   </div>`
+                : '<div style="color: #999; font-size: 13px; margin-top: 4px;">無直接證據引用</div>';
+
+            nodeEl.innerHTML = `
+                <div style="font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+                    <span style="background: #f3f4f6; padding: 4px 8px; border-radius: 4px; font-size: 14px;">[${stepNumber}]</span>
+                    <span>${emoji} ${label}</span>
+                    <span style="color: ${scoreColor}; font-size: 14px; background: ${scoreColor}22; padding: 2px 8px; border-radius: 4px;">
+                        信心度 ${score.toFixed(1)}/10
+                    </span>
+                </div>
+                <div style="color: #1a1a1a; margin-bottom: 8px; line-height: 1.6;">「${node.claim}」</div>
+                ${evidenceHtml}
+                ${depsHtml}
+                ${impactInfo}
+                ${warningsHtml}
+            `;
+
+            return nodeEl;
+        }
+
+        /**
+         * Setup hover interactions
+         */
+        function setupHoverInteractions(container, nodeMap) {
+            const nodes = container.querySelectorAll('.argument-node');
+
+            nodes.forEach(nodeEl => {
+                nodeEl.addEventListener('mouseenter', () => {
+                    const nodeId = nodeEl.getAttribute('data-node-id');
+                    const dependsOn = JSON.parse(nodeEl.getAttribute('data-depends') || '[]');
+                    const affects = JSON.parse(nodeEl.getAttribute('data-affects') || '[]');
+
+                    // Highlight current node
+                    nodeEl.style.borderColor = '#6366f1';
+                    nodeEl.style.boxShadow = '0 4px 12px rgba(99, 102, 241, 0.2)';
+
+                    // Highlight dependencies (parents) - blue background
+                    dependsOn.forEach(depId => {
+                        const depEl = document.getElementById(`node-${depId}`);
+                        if (depEl) {
+                            depEl.style.backgroundColor = '#dbeafe';
+                            depEl.style.borderColor = '#3b82f6';
+                        }
+                    });
+
+                    // Highlight affected nodes (children) - red border
+                    affects.forEach(affectedId => {
+                        const affectedEl = document.getElementById(`node-${affectedId}`);
+                        if (affectedEl) {
+                            affectedEl.style.borderColor = '#ef4444';
+                            affectedEl.style.borderWidth = '2px';
+                        }
+                    });
+                });
+
+                nodeEl.addEventListener('mouseleave', () => {
+                    // Reset all highlights
+                    nodes.forEach(n => {
+                        n.style.backgroundColor = 'white';
+                        n.style.borderColor = '#e5e7eb';
+                        n.style.borderWidth = '2px';
+                        n.style.boxShadow = 'none';
+                    });
+                });
+            });
+        }
+
+        /**
+         * Infer numerical score from confidence level
+         */
+        function inferScore(confidence) {
+            const mapping = { 'high': 8.0, 'medium': 5.0, 'low': 2.0 };
+            return mapping[confidence] || 5.0;
+        }
+
+        // KG Toggle Button Handler
+        document.addEventListener('DOMContentLoaded', () => {
+            const toggleButton = document.getElementById('kgToggleButton');
+            const content = document.getElementById('kgDisplayContent');
+            const icon = document.getElementById('kgToggleIcon');
+
+            if (toggleButton) {
+                toggleButton.addEventListener('click', () => {
+                    if (content.classList.contains('collapsed')) {
+                        content.classList.remove('collapsed');
+                        icon.textContent = '▼';
+                        toggleButton.childNodes[1].textContent = ' 收起';
+                    } else {
+                        content.classList.add('collapsed');
+                        icon.textContent = '▶';
+                        toggleButton.childNodes[1].textContent = ' 展開';
+                    }
+                });
+            }
+        });
 
         // Free Conversation Mode function
         async function performFreeConversation(query) {

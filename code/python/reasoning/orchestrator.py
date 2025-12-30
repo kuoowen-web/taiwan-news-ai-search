@@ -230,7 +230,8 @@ class DeepResearchOrchestrator:
         query: str,
         mode: str,
         items: List[Dict[str, Any]],
-        temporal_context: Optional[Dict[str, Any]] = None
+        temporal_context: Optional[Dict[str, Any]] = None,
+        enable_kg: bool = False
     ) -> List[Dict[str, Any]]:
         """
         Execute deep research using Actor-Critic loop.
@@ -240,6 +241,7 @@ class DeepResearchOrchestrator:
             mode: Research mode (strict, discovery, monitor)
             items: Retrieved items from search (pre-filtered by temporal range)
             temporal_context: Optional temporal information
+            enable_kg: Enable knowledge graph generation (Phase KG, per-request override)
 
         Returns:
             List of NLWeb Item dicts compatible with create_assistant_result().
@@ -385,7 +387,8 @@ class DeepResearchOrchestrator:
                                 query=query,
                                 formatted_context=self.formatted_context,
                                 mode=mode,
-                                temporal_context=temporal_context
+                                temporal_context=temporal_context,
+                                enable_kg=enable_kg  # Phase KG: Pass per-request flag
                             )
                             span.set_result(response)
                     else:
@@ -393,7 +396,8 @@ class DeepResearchOrchestrator:
                             query=query,
                             formatted_context=self.formatted_context,
                             mode=mode,
-                            temporal_context=temporal_context
+                            temporal_context=temporal_context,
+                            enable_kg=enable_kg  # Phase KG: Pass per-request flag
                         )
 
                     iteration_logger.log_agent_output(
@@ -750,8 +754,46 @@ class DeepResearchOrchestrator:
                 }
             )
 
+            # Phase 3.5: Analyze reasoning chain if argument_graph exists
+            if hasattr(response, 'argument_graph') and response.argument_graph:
+                from reasoning.utils.chain_analyzer import ReasoningChainAnalyzer
+                from reasoning.schemas_enhanced import AnalystResearchOutputEnhanced, AnalystResearchOutputEnhancedKG
+
+                self.logger.info("Analyzing reasoning chain for impact and critical nodes")
+
+                # Get weaknesses from critic
+                weaknesses = getattr(review, 'structured_weaknesses', None)
+
+                # Analyze chain
+                try:
+                    analyzer = ReasoningChainAnalyzer(response.argument_graph, weaknesses)
+                    chain_analysis = analyzer.analyze()
+
+                    # Attach to analyst output (preserve KG if present)
+                    response_data = response.model_dump()
+                    response_data['reasoning_chain_analysis'] = chain_analysis
+
+                    # Use the correct schema based on whether KG exists
+                    if hasattr(response, 'knowledge_graph') and response.knowledge_graph:
+                        response = AnalystResearchOutputEnhancedKG(**response_data)
+                    else:
+                        response = AnalystResearchOutputEnhanced(**response_data)
+
+                    self.logger.info(
+                        f"Chain analysis: {len(chain_analysis.critical_nodes)} critical nodes, "
+                        f"max_depth={chain_analysis.max_depth}, "
+                        f"logic_inconsistencies={chain_analysis.logic_inconsistencies}"
+                    )
+
+                    # Display in console tracer (Developer Mode in Terminal)
+                    if tracer:
+                        tracer.reasoning_chain_analysis(response.argument_graph, chain_analysis)
+
+                except Exception as e:
+                    self.logger.error(f"Failed to analyze reasoning chain: {e}", exc_info=True)
+
             # Phase 4: Format as NLWeb result (⚠️ pass context for source extraction)
-            result = self._format_result(query, mode, final_report, iteration + 1, current_context)
+            result = self._format_result(query, mode, final_report, iteration + 1, current_context, analyst_output=response)
             self.logger.info(f"Research completed: {iteration + 1} iterations")
 
             # Tracing: Research end
@@ -788,7 +830,8 @@ class DeepResearchOrchestrator:
         mode: str,
         final_report: Dict[str, Any],
         iterations: int,
-        context: List[Any]
+        context: List[Any],
+        analyst_output=None
     ) -> List[Dict[str, Any]]:
         """
         Format final report as NLWeb Item.
@@ -799,6 +842,7 @@ class DeepResearchOrchestrator:
             final_report: Final report from writer
             iterations: Number of iterations completed
             context: Source items used
+            analyst_output: Optional analyst output with knowledge graph (Phase KG)
 
         Returns:
             List with single NLWeb Item dict
@@ -835,6 +879,44 @@ class DeepResearchOrchestrator:
 
         self.logger.info(f"Converted source_map ({len(self.source_map)} items) to {len(source_urls)} URLs for frontend")
 
+        # Serialize knowledge graph if present (Phase KG)
+        kg_json = None
+        if analyst_output and hasattr(analyst_output, 'knowledge_graph') and analyst_output.knowledge_graph:
+            from datetime import datetime
+            kg = analyst_output.knowledge_graph
+            kg_json = {
+                "entities": [e.model_dump() for e in kg.entities],
+                "relationships": [r.model_dump() for r in kg.relationships],
+                "metadata": {
+                    "generated_at": datetime.now().isoformat(),
+                    "entity_count": len(kg.entities),
+                    "relationship_count": len(kg.relationships)
+                }
+            }
+            self.logger.info(f"Serialized knowledge graph: {len(kg.entities)} entities, {len(kg.relationships)} relationships")
+
+        # Build schema_object
+        schema_obj = {
+            "@type": "ResearchReport",
+            "mode": mode,
+            "iterations": iterations,
+            "sources_used": source_urls,  # Now contains actual URLs instead of citation IDs
+            "confidence": final_report.confidence_level,
+            "methodology": final_report.methodology_note,
+            "total_sources_analyzed": len(context)
+        }
+
+        # Add knowledge graph if available (Phase KG)
+        if kg_json:
+            schema_obj["knowledge_graph"] = kg_json
+
+        # Add reasoning chain if available (Phase 4)
+        if analyst_output and hasattr(analyst_output, 'argument_graph') and analyst_output.argument_graph:
+            schema_obj["argument_graph"] = [node.model_dump() for node in analyst_output.argument_graph]
+
+            if hasattr(analyst_output, 'reasoning_chain_analysis') and analyst_output.reasoning_chain_analysis:
+                schema_obj["reasoning_chain_analysis"] = analyst_output.reasoning_chain_analysis.model_dump()
+
         return [{
             "@type": "Item",
             "url": f"https://deep-research.internal/{mode}/{query[:50]}",
@@ -843,15 +925,7 @@ class DeepResearchOrchestrator:
             "siteUrl": "https://deep-research.internal",
             "score": 95,
             "description": final_report.final_report,
-            "schema_object": {
-                "@type": "ResearchReport",
-                "mode": mode,
-                "iterations": iterations,
-                "sources_used": source_urls,  # Now contains actual URLs instead of citation IDs
-                "confidence": final_report.confidence_level,
-                "methodology": final_report.methodology_note,
-                "total_sources_analyzed": len(context)
-            }
+            "schema_object": schema_obj
         }]
 
     def _format_friendly_no_data_result(

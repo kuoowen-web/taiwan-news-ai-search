@@ -43,9 +43,15 @@ class DeepResearchHandler(NLWebHandler):
 
         self.research_mode = None  # Will be set in prepare()
 
+        # Phase KG: Extract enable_kg parameter from query_params, fallback to config
+        from core.config import CONFIG
+        config_enable_kg = CONFIG.reasoning_params.get("features", {}).get("knowledge_graph_generation", False)
+        self.enable_kg = query_params.get('enable_kg', config_enable_kg)
+
         logger.info("DeepResearchHandler initialized")
         logger.info(f"  Query: {self.query}")
         logger.info(f"  Site: {self.site}")
+        logger.info(f"  Enable KG: {self.enable_kg}")
 
         # Future: Initialize Orchestrator
         # self.orchestrator = DeepResearchOrchestrator(...)
@@ -185,7 +191,8 @@ class DeepResearchHandler(NLWebHandler):
                 query=self.query,
                 mode=self.research_mode,
                 items=items,
-                temporal_context=temporal_context
+                temporal_context=temporal_context,
+                enable_kg=self.enable_kg  # Phase KG: Pass per-request KG flag
             )
 
         # Send results using parent's message sender
@@ -209,7 +216,8 @@ class DeepResearchHandler(NLWebHandler):
             'answer': final_report,
             'confidence_level': self._calculate_confidence(results),
             'methodology_note': f'Deep Research ({self.research_mode} mode)',
-            'sources_used': source_urls  # Use actual source URLs, not report URL
+            'sources_used': source_urls,  # Use actual source URLs, not report URL
+            'items': results  # Include full results with schema_object for Phase 4
         })
 
         logger.info(f"[DEEP RESEARCH] Updated return_value with final report")

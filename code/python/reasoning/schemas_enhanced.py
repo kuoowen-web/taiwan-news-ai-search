@@ -56,7 +56,7 @@ class WeaknessType(str, Enum):
 
 
 class ArgumentNode(BaseModel):
-    """Single logical unit in reasoning chain."""
+    """Single logical unit in reasoning chain with dependency tracking."""
     node_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     claim: str = Field(..., description="The logical claim being made")
     evidence_ids: List[int] = Field(
@@ -65,6 +65,20 @@ class ArgumentNode(BaseModel):
     )
     reasoning_type: LogicType = LogicType.INDUCTION
     confidence: Literal["high", "medium", "low"] = "medium"
+
+    # Phase 4: Reasoning Chain Visualization
+    depends_on: List[str] = Field(
+        default_factory=list,
+        description="List of node_ids this argument depends on"
+    )
+    confidence_score: Optional[float] = Field(
+        None, ge=0.0, le=10.0,
+        description="Numerical confidence score (0-10)"
+    )
+    logic_warnings: List[str] = Field(
+        default_factory=list,
+        description="Logic consistency warnings (e.g., 'Confidence inflated')"
+    )
 
 
 class StructuredWeakness(BaseModel):
@@ -75,11 +89,49 @@ class StructuredWeakness(BaseModel):
     explanation: str = Field(..., min_length=20, description="Why this is a weakness")
 
 
+# ============================================================================
+# Phase 4: Reasoning Chain Analysis
+# ============================================================================
+
+class NodeImpactAnalysis(BaseModel):
+    """Impact analysis for a single node."""
+    node_id: str
+    affects_count: int = Field(..., ge=0)
+    affected_node_ids: List[str] = Field(default_factory=list)
+    is_critical: bool = False
+    criticality_reason: Optional[str] = None
+
+
+class ReasoningChainAnalysis(BaseModel):
+    """Complete reasoning chain analysis with impact propagation."""
+    total_nodes: int
+    max_depth: int
+    topological_order: List[str] = Field(
+        default_factory=list,
+        description="Node IDs in topological order (for rendering)"
+    )
+    critical_nodes: List[NodeImpactAnalysis] = Field(default_factory=list)
+    has_cycles: bool = False
+    cycle_details: Optional[str] = None
+    logic_inconsistencies: int = Field(
+        0,
+        description="Count of logic inflation warnings"
+    )
+
+
+# ============================================================================
+# Phase 2: Enhanced Output Classes (using Phase 4 schemas)
+# ============================================================================
+
 class AnalystResearchOutputEnhanced(AnalystResearchOutput):
     """Analyst output with optional argument graph."""
     argument_graph: Optional[List[ArgumentNode]] = Field(
         default=None,
         description="Structured argument decomposition (Phase 2)"
+    )
+    reasoning_chain_analysis: Optional[ReasoningChainAnalysis] = Field(
+        default=None,
+        description="Reasoning chain analysis with impact propagation (Phase 4)"
     )
 
 
@@ -124,6 +176,9 @@ class EntityType(str, Enum):
     EVENT = "event"
     LOCATION = "location"
     METRIC = "metric"
+    TECHNOLOGY = "technology"
+    CONCEPT = "concept"
+    PRODUCT = "product"
 
 
 class RelationType(str, Enum):
@@ -176,13 +231,27 @@ class KnowledgeGraph(BaseModel):
     def validate_relationships(cls, v, info):
         """Ensure all relationship entity_ids reference existing entities."""
         entities = info.data.get('entities', [])
+        if not entities:
+            # No entities to validate against, skip validation
+            return v
+
         entity_ids = {e.entity_id for e in entities}
+
+        # Filter out invalid relationships instead of raising error
+        valid_relationships = []
         for rel in v:
-            if rel.source_entity_id not in entity_ids:
-                raise ValueError(f"Invalid source_entity_id: {rel.source_entity_id}")
-            if rel.target_entity_id not in entity_ids:
-                raise ValueError(f"Invalid target_entity_id: {rel.target_entity_id}")
-        return v
+            if rel.source_entity_id in entity_ids and rel.target_entity_id in entity_ids:
+                valid_relationships.append(rel)
+            else:
+                # Log warning but don't fail validation
+                from misc.logger.logging_config_helper import get_configured_logger
+                logger = get_configured_logger("reasoning.schemas")
+                logger.warning(
+                    f"Skipping invalid relationship: {rel.source_entity_id} -> {rel.target_entity_id} "
+                    f"(entity_ids not found in entities list)"
+                )
+
+        return valid_relationships
 
 
 class AnalystResearchOutputEnhancedKG(AnalystResearchOutputEnhanced):

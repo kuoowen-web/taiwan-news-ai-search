@@ -419,6 +419,219 @@ class ConsoleTracer:
             else:
                 print(traceback.format_exc())
 
+    def reasoning_chain_analysis(self, argument_graph: List[Any], chain_analysis: Any):
+        """
+        Display reasoning chain analysis with dependency tracking (Phase 4 - Developer Mode in Terminal).
+
+        Args:
+            argument_graph: List of ArgumentNode objects
+            chain_analysis: ReasoningChainAnalysis object
+        """
+        if not self._should_log("DEBUG"):
+            return
+
+        if not argument_graph or len(argument_graph) == 0:
+            return
+
+        # Header
+        if self.enable_colors:
+            header = Panel(
+                f"[bold magenta]🧠 REASONING CHAIN ANALYSIS[/bold magenta]\n"
+                f"Nodes: [cyan]{len(argument_graph)}[/cyan] | "
+                f"Max Depth: [cyan]{chain_analysis.max_depth if chain_analysis else 'N/A'}[/cyan] | "
+                f"Critical Nodes: [yellow]{len(chain_analysis.critical_nodes) if chain_analysis and chain_analysis.critical_nodes else 0}[/yellow]",
+                border_style="magenta",
+                expand=False
+            )
+            self.console.print("\n")
+            self.console.print(header)
+        else:
+            print("\n" + "="*70)
+            print("🧠 REASONING CHAIN ANALYSIS")
+            print(f"Nodes: {len(argument_graph)} | Max Depth: {chain_analysis.max_depth if chain_analysis else 'N/A'}")
+            print("="*70)
+
+        # Build node map
+        node_map = {node.node_id: node for node in argument_graph}
+
+        # Warning: Logic Inconsistencies
+        if chain_analysis and chain_analysis.logic_inconsistencies > 0:
+            if self.enable_colors:
+                self.console.print(
+                    f"\n[bold yellow]⚠️  Logic Inconsistencies Detected: {chain_analysis.logic_inconsistencies}[/bold yellow]",
+                    style="yellow"
+                )
+            else:
+                print(f"\n⚠️  Logic Inconsistencies Detected: {chain_analysis.logic_inconsistencies}")
+
+        # Warning: Cycles
+        if chain_analysis and chain_analysis.has_cycles:
+            if self.enable_colors:
+                self.console.print(
+                    f"[bold red]⚠️  Circular Dependencies:[/bold red] {chain_analysis.cycle_details}",
+                    style="red"
+                )
+            else:
+                print(f"⚠️  Circular Dependencies: {chain_analysis.cycle_details}")
+
+        # Critical Nodes Alert
+        if chain_analysis and chain_analysis.critical_nodes and len(chain_analysis.critical_nodes) > 0:
+            if self.enable_colors:
+                self.console.print("\n[bold yellow]🚨 Critical Weak Points:[/bold yellow]")
+                for critical in chain_analysis.critical_nodes[:3]:  # Top 3
+                    node = node_map.get(critical.node_id)
+                    if node:
+                        self.console.print(
+                            f"  • [yellow]{node.claim[:60]}...[/yellow]\n"
+                            f"    Affects: [cyan]{critical.affects_count}[/cyan] downstream nodes\n"
+                            f"    Reason: [dim]{critical.criticality_reason}[/dim]"
+                        )
+            else:
+                print("\n🚨 Critical Weak Points:")
+                for critical in chain_analysis.critical_nodes[:3]:
+                    node = node_map.get(critical.node_id)
+                    if node:
+                        print(f"  • {node.claim[:60]}...")
+                        print(f"    Affects: {critical.affects_count} downstream nodes")
+                        print(f"    Reason: {critical.criticality_reason}")
+
+        # Display nodes in topological order
+        if self.enable_colors:
+            self.console.print("\n[bold]Reasoning Chain (Topological Order):[/bold]")
+        else:
+            print("\nReasoning Chain (Topological Order):")
+
+        # Get ordered nodes
+        ordered_ids = chain_analysis.topological_order if chain_analysis and chain_analysis.topological_order else [n.node_id for n in argument_graph]
+
+        for i, node_id in enumerate(ordered_ids, 1):
+            node = node_map.get(node_id)
+            if not node:
+                continue
+
+            # Type emoji and label
+            type_emoji = {'deduction': '🔷', 'induction': '🔶', 'abduction': '🔸'}.get(node.reasoning_type, '💭')
+            type_label = {'deduction': '演繹', 'induction': '歸納', 'abduction': '溯因'}.get(node.reasoning_type, node.reasoning_type)
+
+            # Confidence score
+            score = node.confidence_score if node.confidence_score is not None else {
+                'high': 8.0, 'medium': 5.0, 'low': 2.0
+            }.get(node.confidence, 5.0)
+
+            score_color = "green" if score >= 7 else "yellow" if score >= 4 else "red"
+
+            # Display node
+            if self.enable_colors:
+                self.console.print(
+                    f"\n[bold][{i}] {type_emoji} {type_label}[/bold] "
+                    f"[{score_color}]信心度: {score:.1f}/10[/{score_color}]"
+                )
+                self.console.print(f"  [cyan]「{node.claim}」[/cyan]")
+
+                # Evidence
+                if node.evidence_ids and len(node.evidence_ids) > 0:
+                    self.console.print(f"  證據: [dim]{node.evidence_ids}[/dim]")
+                else:
+                    self.console.print(f"  證據: [dim red]無直接引用[/dim red]")
+
+                # Dependencies
+                if node.depends_on and len(node.depends_on) > 0:
+                    dep_indices = [ordered_ids.index(dep_id) + 1 for dep_id in node.depends_on if dep_id in ordered_ids]
+                    self.console.print(f"  依賴: [blue]步驟 {dep_indices}[/blue]")
+
+                # Impact
+                if chain_analysis:
+                    critical = next((c for c in chain_analysis.critical_nodes if c.node_id == node_id), None)
+                    if critical and critical.affects_count > 0:
+                        self.console.print(f"  影響: [magenta]⚡ {critical.affects_count} 個後續推論[/magenta]")
+
+                # Logic warnings
+                if node.logic_warnings and len(node.logic_warnings) > 0:
+                    for warning in node.logic_warnings:
+                        self.console.print(f"  [yellow]⚠️  {warning}[/yellow]")
+            else:
+                print(f"\n[{i}] {type_emoji} {type_label} | 信心度: {score:.1f}/10")
+                print(f"  「{node.claim}」")
+                if node.evidence_ids and len(node.evidence_ids) > 0:
+                    print(f"  證據: {node.evidence_ids}")
+                else:
+                    print(f"  證據: 無直接引用")
+                if node.depends_on and len(node.depends_on) > 0:
+                    dep_indices = [ordered_ids.index(dep_id) + 1 for dep_id in node.depends_on if dep_id in ordered_ids]
+                    print(f"  依賴: 步驟 {dep_indices}")
+                if node.logic_warnings and len(node.logic_warnings) > 0:
+                    for warning in node.logic_warnings:
+                        print(f"  ⚠️  {warning}")
+
+        # Full JSON dump at TRACE level (like Developer Mode)
+        if self._should_log("TRACE"):
+            if self.enable_colors:
+                self.console.print("\n[bold dim]Full Argument Graph (JSON):[/bold dim]")
+            else:
+                print("\n--- Full Argument Graph (JSON) ---")
+
+            import json
+            graph_json = [
+                {
+                    'node_id': n.node_id,
+                    'claim': n.claim,
+                    'reasoning_type': n.reasoning_type,
+                    'confidence': n.confidence,
+                    'confidence_score': n.confidence_score,
+                    'evidence_ids': n.evidence_ids,
+                    'depends_on': n.depends_on,
+                    'logic_warnings': n.logic_warnings
+                }
+                for n in argument_graph
+            ]
+
+            if self.enable_colors:
+                syntax = Syntax(
+                    json.dumps(graph_json, indent=2, ensure_ascii=False),
+                    "json",
+                    theme="monokai",
+                    word_wrap=True
+                )
+                self.console.print(syntax)
+            else:
+                print(json.dumps(graph_json, indent=2, ensure_ascii=False))
+
+            # Chain analysis JSON
+            if chain_analysis:
+                if self.enable_colors:
+                    self.console.print("\n[bold dim]Chain Analysis (JSON):[/bold dim]")
+                else:
+                    print("\n--- Chain Analysis (JSON) ---")
+
+                analysis_json = {
+                    'total_nodes': chain_analysis.total_nodes,
+                    'max_depth': chain_analysis.max_depth,
+                    'topological_order': chain_analysis.topological_order,
+                    'has_cycles': chain_analysis.has_cycles,
+                    'cycle_details': chain_analysis.cycle_details,
+                    'logic_inconsistencies': chain_analysis.logic_inconsistencies,
+                    'critical_nodes': [
+                        {
+                            'node_id': c.node_id,
+                            'affects_count': c.affects_count,
+                            'is_critical': c.is_critical,
+                            'criticality_reason': c.criticality_reason
+                        }
+                        for c in chain_analysis.critical_nodes
+                    ]
+                }
+
+                if self.enable_colors:
+                    syntax = Syntax(
+                        json.dumps(analysis_json, indent=2, ensure_ascii=False),
+                        "json",
+                        theme="monokai",
+                        word_wrap=True
+                    )
+                    self.console.print(syntax)
+                else:
+                    print(json.dumps(analysis_json, indent=2, ensure_ascii=False))
+
 
 class AgentSpan:
     """
