@@ -1459,6 +1459,22 @@
             border-bottom-color: #1d4ed8;
             background: #eff6ff;
         }
+
+        /* Stage 5: URN Citation Styling (LLM Knowledge) */
+        .citation-urn {
+            color: #8b5cf6;
+            font-weight: 600;
+            padding: 0 2px;
+            cursor: help;
+            border-bottom: 1px dashed #8b5cf6;
+        }
+
+        .citation-urn sup {
+            font-size: 9px;
+            color: #6d28d9;
+            margin-left: 1px;
+        }
+
         /* Knowledge Graph D3 Visualization (Phase KG Enhanced) */
         .kg-graph-container {
             width: 100%;
@@ -1680,6 +1696,18 @@
                                     <span class="kg-toggle-icon">📊</span>
                                     啟用知識圖譜 (Knowledge Graph)
                                     <span class="kg-toggle-hint">推論時間約增加 2-3 秒</span>
+                                </span>
+                            </label>
+                        </div>
+
+                        <!-- Web Search Toggle (Stage 5 - visible only when Deep Research is selected) -->
+                        <div class="kg-toggle-container" id="webSearchToggleContainer" style="display: none;">
+                            <label class="kg-toggle-label">
+                                <input type="checkbox" id="webSearchToggle" class="kg-toggle-checkbox">
+                                <span class="kg-toggle-text">
+                                    <span class="kg-toggle-icon">🌐</span>
+                                    啟用網路搜尋 (Web Search)
+                                    <span class="kg-toggle-hint">補充即時數據，推論時間約增加 3-5 秒</span>
                                 </span>
                             </label>
                         </div>
@@ -2004,15 +2032,18 @@
                     chatInputContainer.style.display = 'block';
                 }
 
-                // Show/hide research mode selector and KG toggle based on mode
+                // Show/hide research mode selector, KG toggle, and Web Search toggle based on mode
                 const researchModeSelector = document.getElementById('researchModeSelector');
                 const kgToggleContainer = document.getElementById('kgToggleContainer');
+                const webSearchToggleContainer = document.getElementById('webSearchToggleContainer');
                 if (newMode === 'deep_research') {
                     researchModeSelector.style.display = 'block';
                     kgToggleContainer.style.display = 'block';
+                    webSearchToggleContainer.style.display = 'block';
                 } else {
                     researchModeSelector.style.display = 'none';
                     kgToggleContainer.style.display = 'none';
+                    webSearchToggleContainer.style.display = 'none';
                 }
             });
         });
@@ -2850,6 +2881,13 @@
                     console.log('[Deep Research] Knowledge Graph generation enabled');
                 }
 
+                // Add enable_web_search flag (Stage 5)
+                const webSearchToggle = document.getElementById('webSearchToggle');
+                if (webSearchToggle && webSearchToggle.checked) {
+                    deepResearchUrl.searchParams.append('enable_web_search', 'true');
+                    console.log('[Deep Research] Web Search enabled');
+                }
+
                 // Add conversation_id for context continuity across modes
                 if (currentConversationId) {
                     deepResearchUrl.searchParams.append('conversation_id', currentConversationId);
@@ -2925,6 +2963,7 @@
         }
 
         // Helper function to convert citation numbers [1] to clickable links
+        // Stage 5: Also handles URN sources (urn:llm:knowledge:xxx) with special styling
         function addCitationLinks(htmlContent, sources) {
             if (!sources || sources.length === 0) {
                 return htmlContent;
@@ -2936,6 +2975,13 @@
                 if (index >= 0 && index < sources.length) {
                     const url = sources[index];
                     if (url) {  // Only create link if URL is not empty
+                        // Stage 5: Check if this is a URN (LLM Knowledge source)
+                        if (url.startsWith('urn:llm:knowledge:')) {
+                            // Extract topic from URN for display
+                            const topic = url.replace('urn:llm:knowledge:', '');
+                            return `<span class="citation-urn" title="AI 背景知識：${topic}">[${num}]<sup>AI</sup></span>`;
+                        }
+                        // Normal URL - create clickable link
                         return `<a href="${url}" target="_blank" class="citation-link" title="來源 ${num}">[${num}]</a>`;
                     }
                 }
@@ -3914,6 +3960,21 @@
                     `;
                 });
 
+                // Add "Other" text input option
+                contentHTML += `
+                    <div class="custom-input-group" style="margin-top: 8px; display: flex; gap: 6px; align-items: center;">
+                        <input type="text" class="custom-option-input"
+                               placeholder="或自行輸入..."
+                               data-question-id="${question.question_id}"
+                               style="flex: 1; padding: 6px 10px; border: 1px solid #ddd; border-radius: 16px; font-size: 0.9em;">
+                        <button class="option-chip custom-input-confirm"
+                                data-question-id="${question.question_id}"
+                                style="padding: 6px 12px; background: #e0e0e0;">
+                            確定
+                        </button>
+                    </div>
+                `;
+
                 contentHTML += '</div></div>';
             });
 
@@ -3941,8 +4002,18 @@
             const questions = clarificationData.questions;
             const selectedAnswers = {}; // {question_id: {label, query_modifier, is_comprehensive}}
 
-            // Option click handler
-            container.querySelectorAll('.option-chip').forEach(chip => {
+            // Helper to check if all questions answered and enable submit
+            function updateSubmitButton() {
+                const submitBtn = container.querySelector('.submit-clarification');
+                const allAnswered = questions.every(q => selectedAnswers[q.question_id]);
+                submitBtn.disabled = !allAnswered;
+                if (allAnswered) {
+                    console.log('[Clarification] All questions answered, submit enabled');
+                }
+            }
+
+            // Option chip click handler
+            container.querySelectorAll('.option-chip:not(.custom-input-confirm)').forEach(chip => {
                 chip.addEventListener('click', function() {
                     const questionBlock = this.closest('.question-block');
                     const questionId = questionBlock.dataset.questionId;
@@ -3950,6 +4021,10 @@
                     // Toggle selection (single select per question)
                     questionBlock.querySelectorAll('.option-chip').forEach(c => c.classList.remove('selected'));
                     this.classList.add('selected');
+
+                    // Clear custom input when selecting a chip
+                    const customInput = questionBlock.querySelector('.custom-option-input');
+                    if (customInput) customInput.value = '';
 
                     // Store selection
                     selectedAnswers[questionId] = {
@@ -3959,14 +4034,48 @@
                     };
 
                     console.log('[Clarification] Selected:', questionId, selectedAnswers[questionId]);
+                    updateSubmitButton();
+                });
+            });
 
-                    // Enable submit if all required questions answered
-                    const submitBtn = container.querySelector('.submit-clarification');
-                    const allAnswered = questions.every(q => selectedAnswers[q.question_id]);
-                    submitBtn.disabled = !allAnswered;
+            // Custom input confirm button handler
+            container.querySelectorAll('.custom-input-confirm').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const questionId = this.dataset.questionId;
+                    const questionBlock = container.querySelector(`.question-block[data-question-id="${questionId}"]`);
+                    const customInput = questionBlock.querySelector('.custom-option-input');
+                    const customValue = customInput.value.trim();
 
-                    if (allAnswered) {
-                        console.log('[Clarification] All questions answered, submit enabled');
+                    if (!customValue) {
+                        alert('請輸入內容');
+                        return;
+                    }
+
+                    // Deselect all chips
+                    questionBlock.querySelectorAll('.option-chip:not(.custom-input-confirm)').forEach(c => c.classList.remove('selected'));
+
+                    // Highlight confirm button as selected
+                    this.classList.add('selected');
+
+                    // Store custom input as the answer
+                    selectedAnswers[questionId] = {
+                        label: customValue,
+                        query_modifier: customValue,
+                        is_comprehensive: false
+                    };
+
+                    console.log('[Clarification] Custom input:', questionId, selectedAnswers[questionId]);
+                    updateSubmitButton();
+                });
+            });
+
+            // Allow Enter key to confirm custom input
+            container.querySelectorAll('.custom-option-input').forEach(input => {
+                input.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        const questionId = this.dataset.questionId;
+                        const confirmBtn = container.querySelector(`.custom-input-confirm[data-question-id="${questionId}"]`);
+                        if (confirmBtn) confirmBtn.click();
                     }
                 });
             });

@@ -1,11 +1,12 @@
 """
-Enhanced schemas for structured reasoning features (Phase 1, 2, 3, KG).
+Enhanced schemas for structured reasoning features (Phase 1, 2, 3, KG, Stage 5).
 
 This module extends base reasoning schemas with optional fields for:
 - Phase 1: User-friendly SSE progress messages
 - Phase 2: Argument graphs and structured critique
 - Phase 3: Plan-and-Write for long-form reports
 - Phase KG: Entity-Relationship Knowledge Graph generation
+- Stage 5: Gap Detection with LLM Knowledge and Web Search
 
 All enhanced fields are optional to maintain backward compatibility.
 """
@@ -14,6 +15,29 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Literal, Dict, Any
 from enum import Enum
 import uuid
+
+
+# ============================================================================
+# Stage 5: Gap Detection Knowledge Enrichment
+# ============================================================================
+
+class GapResolutionType(str, Enum):
+    """Types of gap resolution for knowledge enrichment."""
+    LLM_KNOWLEDGE = "llm_knowledge"      # Static facts (definitions, principles, history)
+    WEB_SEARCH = "web_search"            # Dynamic data (current positions, prices, recent events)
+    INTERNAL_SEARCH = "internal_search"  # Existing vector DB search
+
+
+class GapResolution(BaseModel):
+    """Resolution for a detected knowledge gap."""
+    gap_type: str = Field(..., description="Type of gap: definition, current_data, context, etc.")
+    resolution: GapResolutionType = Field(..., description="How this gap should be resolved")
+    reason: str = Field(default="", description="Explanation for resolution choice (for Critic/debug)")
+    search_query: Optional[str] = Field(default=None, description="Query for web/internal search")
+    llm_answer: Optional[str] = Field(default=None, description="Answer from LLM knowledge")
+    confidence: Literal["high", "medium", "low"] = Field(default="medium", description="Confidence level")
+    requires_web_search: bool = Field(default=False, description="True if web search needed but toggle is off")
+    topic: Optional[str] = Field(default=None, description="Topic for URN generation: urn:llm:knowledge:{topic}")
 
 # Import base schemas
 from reasoning.agents.analyst import AnalystResearchOutput
@@ -133,6 +157,36 @@ class AnalystResearchOutputEnhanced(AnalystResearchOutput):
         default=None,
         description="Reasoning chain analysis with impact propagation (Phase 4)"
     )
+    gap_resolutions: List[GapResolution] = Field(
+        default_factory=list,
+        description="Knowledge gap resolutions (Stage 5)"
+    )
+
+    @field_validator('draft')
+    @classmethod
+    def validate_draft_with_gaps(cls, v, info):
+        """
+        Validate draft length based on status and gap resolutions.
+        Stage 5: Allow shorter drafts when gap_resolutions are present,
+        as the response is delegating to web search or LLM knowledge.
+        """
+        status = info.data.get('status')
+        gap_resolutions = info.data.get('gap_resolutions', [])
+
+        # If there are gap resolutions (Stage 5), allow shorter drafts
+        if gap_resolutions and len(gap_resolutions) > 0:
+            # Minimum 30 characters when using gap resolutions
+            if status == 'DRAFT_READY' and len(v) < 30:
+                raise ValueError(
+                    "Draft must be at least 30 characters when using gap_resolutions"
+                )
+        else:
+            # Original validation: 100 characters for DRAFT_READY
+            if status == 'DRAFT_READY' and len(v) < 100:
+                raise ValueError(
+                    "Draft must be at least 100 characters when status is DRAFT_READY"
+                )
+        return v
 
 
 class CriticReviewOutputEnhanced(CriticReviewOutput):
@@ -260,3 +314,4 @@ class AnalystResearchOutputEnhancedKG(AnalystResearchOutputEnhanced):
         default=None,
         description="Entity-relationship knowledge graph"
     )
+    # gap_resolutions is inherited from AnalystResearchOutputEnhanced

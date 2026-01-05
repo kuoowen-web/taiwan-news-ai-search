@@ -158,7 +158,7 @@ class WriterAgent(BaseReasoningAgent):
   "final_report": "# 完整報告\\n\\n## 第一章...\\n\\n...",
   "sources_used": [1, 3, 5],
   "confidence_level": "High",
-  "methodology_note": "基於 {len(analyst_citations)} 個來源，經過多輪審查，採用Plan-and-Write方法生成"
+  "methodology_note": "基於 {{len(analyst_citations)}} 個來源，經過深度研究與多輪審查"
 }}
 ```
 

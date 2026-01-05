@@ -64,6 +64,11 @@ class CriticAgent(BaseReasoningAgent):
         if analyst_output and hasattr(analyst_output, 'knowledge_graph'):
             knowledge_graph = analyst_output.knowledge_graph
 
+        # Extract gap_resolutions if available (Stage 5)
+        gap_resolutions = None
+        if analyst_output and hasattr(analyst_output, 'gap_resolutions'):
+            gap_resolutions = analyst_output.gap_resolutions
+
         # Build the review prompt from PDF (pages 16-21)
         review_prompt = self._build_review_prompt(
             draft=draft,
@@ -71,7 +76,8 @@ class CriticAgent(BaseReasoningAgent):
             mode=mode,
             argument_graph=argument_graph,
             knowledge_graph=knowledge_graph,  # Phase KG
-            enable_structured_weaknesses=enable_structured
+            enable_structured_weaknesses=enable_structured,
+            gap_resolutions=gap_resolutions  # Stage 5
         )
 
         # Choose schema based on feature flag (Gemini Issue 2: Dynamic schema selection)
@@ -117,7 +123,8 @@ class CriticAgent(BaseReasoningAgent):
         mode: str,
         argument_graph=None,
         knowledge_graph=None,
-        enable_structured_weaknesses: bool = False
+        enable_structured_weaknesses: bool = False,
+        gap_resolutions=None
     ) -> str:
         """
         Build review prompt from PDF System Prompt (pages 16-21).
@@ -129,6 +136,7 @@ class CriticAgent(BaseReasoningAgent):
             argument_graph: Optional argument graph from Analyst (Phase 2)
             knowledge_graph: Optional knowledge graph from Analyst (Phase KG)
             enable_structured_weaknesses: Enable structured weakness detection (Phase 2)
+            gap_resolutions: Optional gap resolutions from Analyst (Stage 5)
 
         Returns:
             Complete review prompt string
@@ -411,6 +419,68 @@ Analyst 生成了一個知識圖譜 (Knowledge Graph)，包含實體 (entities) 
 
             kg_validation_prompt = kg_validation_prompt.replace("{knowledge_graph}", kg_str)
             prompt += kg_validation_prompt
+
+        # Add LLM Knowledge validation instructions if present (Stage 5)
+        if gap_resolutions:
+            llm_knowledge_gaps = [g for g in gap_resolutions
+                                  if hasattr(g, 'resolution') and str(g.resolution) == 'llm_knowledge']
+            if llm_knowledge_gaps:
+                import json
+                gap_validation_prompt = """
+---
+
+## LLM 知識驗證 (LLM Knowledge Validation - Stage 5)
+
+Analyst 使用了 LLM Knowledge 來補充知識缺口。請嚴格驗證以下項目：
+
+### ⛔ 紅線違規檢查
+
+以下任何情況都應該導致 **REJECT**：
+
+1. **時效性資料使用 LLM Knowledge**：
+   - 若 gap_type 標記為 `current_data` 但使用 `llm_knowledge` -> **REJECT**
+   - 範例違規：「ASML 現任 CEO 是 Peter Wennink」（這是動態資料）
+
+2. **編造具體數字**：
+   - 若 llm_answer 包含具體百分比、股價、營收等數字 -> **REJECT**
+   - 範例違規：「台積電 2024 年營收成長 25%」（除非來自已引用的來源）
+
+3. **信心度不匹配**：
+   - 若 confidence 為 `high` 但內容是推測性質 -> **WARN**
+   - 若 confidence 為 `low` 但在草稿中作為確定事實使用 -> **REJECT**
+
+4. **編造 URL**：
+   - 若 llm_answer 包含任何 URL 連結 -> **REJECT**
+
+### ✅ 合規使用範例
+
+這些情況是允許的：
+- 定義解釋：「EUV 是極紫外光微影技術...」（confidence: high ✓）
+- 歷史事實：「台積電由張忠謀於 1987 年創立」（confidence: high ✓）
+- 概念說明：「Fabless 模式是指無晶圓廠的設計公司模式」（confidence: high ✓）
+
+### 檢查的 Gap Resolutions
+
+{gap_resolutions}
+
+### 輸出要求
+
+如果發現違規：
+- 將問題加入 `source_issues` 列表，說明「[Tier 6 違規] ...」
+- 如果是紅線違規，將 `status` 設為 "REJECT"
+- 在 `suggestions` 中建議移除或降級該知識引用
+
+"""
+                gaps_str = json.dumps([{
+                    "gap_type": g.gap_type,
+                    "resolution": str(g.resolution),
+                    "llm_answer": g.llm_answer,
+                    "confidence": g.confidence,
+                    "reason": g.reason
+                } for g in llm_knowledge_gaps], ensure_ascii=False, indent=2)
+
+                gap_validation_prompt = gap_validation_prompt.replace("{gap_resolutions}", gaps_str)
+                prompt += gap_validation_prompt
 
         return prompt
 

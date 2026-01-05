@@ -2,6 +2,8 @@
 Deep Research Orchestrator - Coordinates the Actor-Critic reasoning loop.
 """
 
+import asyncio
+import json
 import time
 from typing import Dict, Any, List, Optional
 from misc.logger.logging_config_helper import get_configured_logger
@@ -52,6 +54,10 @@ class ProgressConfig:
         "gap_search_started": {
             "weight": 0.55,
             "message": "偵測到資訊缺口，正在補充搜尋...",
+        },
+        "analyst_integrating_new_data": {
+            "weight": 0.58,
+            "message": "整合新資料中，重新分析...",
         }
     }
 
@@ -231,7 +237,8 @@ class DeepResearchOrchestrator:
         mode: str,
         items: List[Dict[str, Any]],
         temporal_context: Optional[Dict[str, Any]] = None,
-        enable_kg: bool = False
+        enable_kg: bool = False,
+        enable_web_search: bool = False
     ) -> List[Dict[str, Any]]:
         """
         Execute deep research using Actor-Critic loop.
@@ -242,6 +249,7 @@ class DeepResearchOrchestrator:
             items: Retrieved items from search (pre-filtered by temporal range)
             temporal_context: Optional temporal information
             enable_kg: Enable knowledge graph generation (Phase KG, per-request override)
+            enable_web_search: Enable web search for dynamic data (Stage 5)
 
         Returns:
             List of NLWeb Item dicts compatible with create_assistant_result().
@@ -264,7 +272,7 @@ class DeepResearchOrchestrator:
             from reasoning.utils.console_tracer import ConsoleTracer
             tracer = ConsoleTracer(query_id=query_id, verbosity=verbosity)
 
-        self.logger.info(f"Starting deep research: query='{query}', mode={mode}, items={len(items)}")
+        self.logger.info(f"Starting deep research: query='{query}', mode={mode}, items={len(items)}, enable_web_search={enable_web_search}")
 
         # Tracing: Research start
         if tracer:
@@ -355,14 +363,16 @@ class DeepResearchOrchestrator:
                             response = await self.analyst.revise(
                                 original_draft=draft,
                                 review=review,
-                                formatted_context=self.formatted_context
+                                formatted_context=self.formatted_context,
+                                query=query
                             )
                             span.set_result(response)
                     else:
                         response = await self.analyst.revise(
                             original_draft=draft,
                             review=review,
-                            formatted_context=self.formatted_context
+                            formatted_context=self.formatted_context,
+                            query=query
                         )
 
                     iteration_logger.log_agent_output(
@@ -388,7 +398,8 @@ class DeepResearchOrchestrator:
                                 formatted_context=self.formatted_context,
                                 mode=mode,
                                 temporal_context=temporal_context,
-                                enable_kg=enable_kg  # Phase KG: Pass per-request flag
+                                enable_kg=enable_kg,  # Phase KG: Pass per-request flag
+                                enable_web_search=enable_web_search  # Stage 5: Pass web search flag
                             )
                             span.set_result(response)
                     else:
@@ -397,7 +408,8 @@ class DeepResearchOrchestrator:
                             formatted_context=self.formatted_context,
                             mode=mode,
                             temporal_context=temporal_context,
-                            enable_kg=enable_kg  # Phase KG: Pass per-request flag
+                            enable_kg=enable_kg,  # Phase KG: Pass per-request flag
+                            enable_web_search=enable_web_search  # Stage 5: Pass web search flag
                         )
 
                     iteration_logger.log_agent_output(
@@ -513,6 +525,82 @@ class DeepResearchOrchestrator:
                         # (will be caught in next iteration with system hint)
 
                 draft = response.draft
+
+                # Stage 5: Process gap_resolutions for web search
+                gap_resolution_added_data = False
+                if hasattr(response, 'gap_resolutions') and response.gap_resolutions:
+                    self.logger.info("="*80)
+                    self.logger.info(f"[STAGE 5] GAP DETECTION TRIGGERED - Found {len(response.gap_resolutions)} gap resolutions")
+                    for i, gap in enumerate(response.gap_resolutions, 1):
+                        self.logger.info(f"  Gap {i}: type={gap.gap_type}, resolution={gap.resolution}, reason={gap.reason}")
+                    self.logger.info("="*80)
+
+                    context_before = len(current_context)
+                    await self._process_gap_resolutions(
+                        response=response,
+                        mode=mode,
+                        current_context=current_context,
+                        enable_web_search=enable_web_search,
+                        tracer=tracer
+                    )
+                    context_after = len(current_context)
+                    gap_resolution_added_data = context_after > context_before
+                else:
+                    self.logger.warning("[STAGE 5] No gap_resolutions found (gap_resolutions is empty or missing)")
+
+                # If new data was added, re-run Analyst to integrate it
+                if gap_resolution_added_data:
+                    self.logger.info(f"Gap resolution added {context_after - context_before} items. Re-running Analyst to integrate new data.")
+
+                    await self._send_progress({
+                        "message_type": "intermediate_result",
+                        "stage": "analyst_integrating_new_data"
+                    })
+
+                    # Re-run Analyst with enriched context
+                    # Stage 5: Simplified tracer input (avoid logging full context)
+                    analyst_input = {
+                        "query": query,
+                        "context_count": len(current_context),
+                        "mode": mode,
+                        "enable_web_search": False  # Don't trigger another round of web search
+                    }
+
+                    # Format context for re-analysis with enriched data
+                    formatted_context_enriched = "\n".join([
+                        f"[{i+1}] {doc.get('title', 'Unknown')} ({doc.get('site', 'Unknown')})"
+                        for i, doc in enumerate(current_context)
+                    ])
+
+                    if tracer:
+                        with tracer.agent_span("analyst", "research_with_enriched_data", analyst_input) as span:
+                            response = await self.analyst.research(
+                                query=query,
+                                formatted_context=formatted_context_enriched,
+                                mode=mode,
+                                temporal_context=temporal_context,
+                                enable_kg=enable_kg,
+                                enable_web_search=False  # Disable for re-analysis (already got data)
+                            )
+                            span.set_result(response)
+                    else:
+                        response = await self.analyst.research(
+                            query=query,
+                            formatted_context=formatted_context_enriched,
+                            mode=mode,
+                            temporal_context=temporal_context,
+                            enable_kg=enable_kg,
+                            enable_web_search=False  # Disable for re-analysis (already got data)
+                        )
+
+                    draft = response.draft
+
+                    iteration_logger.log_agent_output(
+                        iteration=iteration + 1,
+                        agent_name="analyst_enriched",
+                        input_prompt=f"Query: {query} (with {len(current_context)} enriched sources)",
+                        output_response=response
+                    )
 
                 # Send progress: Analyst complete
                 await self._send_progress({
@@ -809,7 +897,6 @@ class DeepResearchOrchestrator:
 
         except NoValidSourcesError as e:
             self.logger.error(f"No valid sources after filtering: {e}")
-            # Tracing: Error
             if tracer:
                 tracer.error(f"No valid sources after filtering: {e}")
             return self._format_error_result(
@@ -817,12 +904,32 @@ class DeepResearchOrchestrator:
                 f"No valid sources available in {mode} mode. Try using 'discovery' mode for broader source coverage."
             )
 
+        except (asyncio.TimeoutError, TimeoutError) as e:
+            self.logger.error(f"Timeout error in orchestrator: {e}")
+            if tracer:
+                tracer.error(f"Research timeout: {str(e)}")
+            return self._format_error_result(
+                query,
+                "研究請求超時，請稍後再試或縮小搜尋範圍。"
+            )
+
+        except (ConnectionError, OSError) as e:
+            self.logger.error(f"Network error in orchestrator: {e}")
+            if tracer:
+                tracer.error(f"Network error: {str(e)}")
+            return self._format_error_result(
+                query,
+                "網路連線發生問題，請檢查連線後再試。"
+            )
+
         except Exception as e:
-            self.logger.error(f"Unexpected error in orchestrator: {e}", exc_info=True)
-            # Tracing: Error
+            self.logger.critical(f"Unexpected error in orchestrator: {e}", exc_info=True)
             if tracer:
                 tracer.error(f"Research failed: {str(e)}", exception=e)
-            return self._format_error_result(query, f"Research error: {str(e)}")
+            # Re-raise in development/testing mode
+            if CONFIG.should_raise_exceptions():
+                raise
+            return self._format_error_result(query, f"系統發生未預期錯誤: {str(e)}")
 
     def _format_result(
         self,
@@ -1030,3 +1137,178 @@ class DeepResearchOrchestrator:
                 "error": error_message
             }
         }]
+
+    async def _process_gap_resolutions(
+        self,
+        response: Any,
+        mode: str,
+        current_context: List[Dict[str, Any]],
+        enable_web_search: bool,
+        tracer: Any = None
+    ) -> None:
+        """
+        Process gap_resolutions from Analyst output (Stage 5).
+
+        Handles three types of gap resolution:
+        1. LLM Knowledge: Creates virtual documents with URN
+        2. Web Search: Executes Bing search if enabled
+        3. Internal Search: Uses existing vector DB (handled by main loop)
+
+        Args:
+            response: Analyst output with gap_resolutions
+            mode: Research mode
+            current_context: Current context list (modified in place)
+            enable_web_search: Whether web search is enabled
+            tracer: Optional console tracer
+        """
+        from reasoning.schemas_enhanced import GapResolutionType
+
+        web_search_gaps = []
+        llm_knowledge_items = []
+
+        for gap in response.gap_resolutions:
+            if gap.resolution == GapResolutionType.LLM_KNOWLEDGE:
+                # Create virtual document for LLM knowledge
+                topic = gap.topic or gap.gap_type.replace(" ", "_")
+                urn = f"urn:llm:knowledge:{topic}"
+
+                virtual_doc = {
+                    "url": urn,
+                    "title": f"AI 背景知識：{gap.gap_type}",
+                    "site": "LLM Knowledge",
+                    "description": f"[Tier 6 | llm_knowledge] {gap.llm_answer or ''}",
+                    "_reasoning_metadata": {
+                        "tier": 6,
+                        "type": "llm_knowledge",
+                        "original_source": "LLM Knowledge",
+                        "gap_type": gap.gap_type,
+                        "confidence": gap.confidence
+                    }
+                }
+                llm_knowledge_items.append(virtual_doc)
+                self.logger.info(f"Created LLM knowledge document: {urn}")
+
+            elif gap.resolution == GapResolutionType.WEB_SEARCH:
+                if enable_web_search and gap.search_query:
+                    web_search_gaps.append(gap)
+                elif gap.requires_web_search:
+                    # Mark as needing web search but not enabled
+                    self.logger.info(f"Web search required but not enabled for: {gap.search_query}")
+
+        # Add LLM knowledge items to context
+        if llm_knowledge_items:
+            current_context.extend(llm_knowledge_items)
+            # Update source_map with new items
+            start_idx = len(self.source_map) + 1
+            for i, item in enumerate(llm_knowledge_items):
+                self.source_map[start_idx + i] = item
+            self.logger.info(f"Added {len(llm_knowledge_items)} LLM knowledge items to context")
+
+        # Execute web searches in parallel if enabled
+        if web_search_gaps and enable_web_search:
+            await self._execute_web_searches(web_search_gaps, mode, current_context, tracer)
+
+    async def _execute_web_searches(
+        self,
+        gaps: List[Any],
+        mode: str,
+        current_context: List[Dict[str, Any]],
+        tracer: Any = None
+    ) -> None:
+        """
+        Execute web searches for gap resolutions in parallel.
+
+        Args:
+            gaps: List of GapResolution objects requiring web search
+            mode: Research mode
+            current_context: Current context list (modified in place)
+            tracer: Optional console tracer
+        """
+        import asyncio
+
+        # Get Bing search configuration
+        tier_6_config = CONFIG.reasoning_params.get("tier_6", {})
+        web_config = tier_6_config.get("web_search", {})
+        max_results = web_config.get("max_results", 5)
+
+        self.logger.info(f"Executing {len(gaps)} web searches for gap resolution")
+
+        # Send progress
+        await self._send_progress({
+            "message_type": "intermediate_result",
+            "stage": "web_search_started",
+            "queries": [g.search_query for g in gaps]
+        })
+
+        try:
+            # Stage 5: Use Google Search (Bing is deprecated)
+            from retrieval_providers.google_search_client import GoogleSearchClient
+
+            search_client = GoogleSearchClient()
+
+            # Execute searches in parallel
+            search_tasks = []
+            for gap in gaps:
+                if gap.search_query:
+                    task = search_client.search_all_sites(
+                        query=gap.search_query,
+                        num_results=max_results
+                    )
+                    search_tasks.append((gap, task))
+
+            # Gather results
+            all_results = []
+            for gap, task in search_tasks:
+                try:
+                    results = await task
+                    for result in results:
+                        # Convert to dict format and add tier 6 metadata
+                        if isinstance(result, (list, tuple)) and len(result) >= 4:
+                            schema_json = result[1] if len(result) > 1 else "{}"
+                            try:
+                                schema_obj = json.loads(schema_json) if isinstance(schema_json, str) else schema_json
+                            except json.JSONDecodeError:
+                                schema_obj = {}
+
+                            web_doc = {
+                                "url": result[0],
+                                "title": result[2] if len(result) > 2 else "Web Result",
+                                "site": result[3] if len(result) > 3 else "Web",
+                                "description": f"[Tier 6 | web_reference] {schema_obj.get('description', '')}",
+                                "_reasoning_metadata": {
+                                    "tier": 6,
+                                    "type": "web_reference",
+                                    "original_source": result[3] if len(result) > 3 else "Web",
+                                    "gap_query": gap.search_query
+                                }
+                            }
+                            all_results.append(web_doc)
+
+                    self.logger.info(f"Web search for '{gap.search_query}': {len(results)} results")
+
+                except Exception as e:
+                    self.logger.error(f"Web search failed for '{gap.search_query}': {e}")
+
+            # Add to context
+            if all_results:
+                current_context.extend(all_results)
+                # Update source_map
+                start_idx = len(self.source_map) + 1
+                for i, item in enumerate(all_results):
+                    self.source_map[start_idx + i] = item
+                self.logger.info(f"Added {len(all_results)} web search results to context")
+
+                # Tracing
+                if tracer:
+                    tracer.context_update(
+                        "WEB_SEARCH",
+                        {
+                            "queries_executed": [g.search_query for g in gaps],
+                            "results_found": len(all_results)
+                        }
+                    )
+
+        except ImportError:
+            self.logger.warning("BingSearchClient not available, skipping web search")
+        except Exception as e:
+            self.logger.error(f"Web search execution failed: {e}")

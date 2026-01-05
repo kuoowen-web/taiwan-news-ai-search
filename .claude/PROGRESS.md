@@ -241,40 +241,13 @@ Completed all components of the analytics logging infrastructure:
 
 ## Current Focus
 
-### Track B: BM25 Implementation (IN PROGRESS)
-**Goal**: Replace LLM keyword scoring with BM25 algorithm
+### 2024-12 Onward: Post-Reasoning Refinement
 
-**Status**: Planning phase
-- Researching library options (rank-bm25 vs custom)
-- Designing integration with Qdrant retrieval
-- Preparing score fusion logic
-
-### Track C: MMR Implementation (IN PROGRESS)
-**Goal**: Replace LLM diversity re-ranking with MMR algorithm
-
-**Status**: Planning phase
-- Designing MMR formula implementation
-- Planning integration with post_ranking.py
-- Preparing analytics logging
-
----
-
-## Performance Metrics
-
-### Current Baseline
-- Cost: $1.20 per query
-- Latency: 15-25 seconds
-- Accuracy: LLM-based (inconsistent)
-
-### Week 3 Target (BM25 + MMR)
-- Cost: $0.70 per query (40% reduction)
-- Latency: 8-12 seconds (40% reduction)
-- Accuracy: More consistent
-
-### Week 8 Target (+ XGBoost)
-- Cost: $0.15 per query (88% total reduction)
-- Latency: 3-5 seconds (75% total reduction)
-- Accuracy: +15-25% improvement
+All major tracks (A-F) completed. Current work focuses on:
+- **Production Monitoring**: Track reasoning system performance metrics
+- **UX Iteration**: Refine clarification flow based on user feedback
+- **Citation Quality**: Improve source linking and formatting
+- **Cost Optimization**: Profile and reduce token usage in agent prompts
 
 ---
 

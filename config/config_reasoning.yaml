@@ -12,6 +12,18 @@ reasoning:
     argument_graphs: true     # Phase 2: Structured argument decomposition
     structured_critique: true # Phase 2: Structured weakness detection
     knowledge_graph_generation: true  # Phase KG: Entity-Relationship Knowledge Graph
+    gap_knowledge_enrichment: true    # Stage 5: Gap Detection with LLM Knowledge & Web Search
+
+  # Stage 5: Tier 6 Knowledge Enrichment Configuration
+  tier_6:
+    llm_knowledge:
+      enabled: true
+      confidence_cap: "medium"   # Max confidence for LLM-generated knowledge
+      max_answer_length: 300     # Max chars for inline LLM answers
+    web_search:
+      enabled: true
+      provider: "google"         # Stage 5: Google Custom Search (Bing deprecated)
+      max_results: 5             # Free tier: 100 queries/day, max 10 per request
 
   # Auto-REJECT thresholds for Phase 2 structured critique
   critique_thresholds:

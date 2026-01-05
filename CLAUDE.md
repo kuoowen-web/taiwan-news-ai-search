@@ -2,185 +2,107 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-MOST IMPORTANT GUIDELINE: Only implement exactly what you have been asked to. Do not add additional functionality. You tend to over complicate.
+**GOLDEN RULE**: Only implement exactly what you have been asked to. Do not add additional functionality. You tend to over complicate.
+
+---
 
 ## Project Overview
 
-This is a system based on NLWeb that enables natural language interactions with mainly news websites. The goal is to provide trusted, accurate, logically sound search and inference experience.
+Natural language search system for news websites. Goal: trusted, accurate, logically sound search and inference.
 
-## Common Development Commands
+**Current Status** (Dec 2025): Reasoning & Deep Research system completed. Focus: Performance optimization.
 
-### Running the Server
-```bash
-# Start aiohttp server (recommended)
-./startup_aiohttp.sh
-
-# Or directly from code/python
-cd code/python
-python -m webserver.aiohttp_server
-```
-
-### Running Tests
-```bash
-# Quick test suite
-cd code && ./python/testing/run_all_tests.sh
-
-# Comprehensive test runner with options
-./python/testing/run_tests_comprehensive.sh -m end_to_end  # Specific test type
-./python/testing/run_tests_comprehensive.sh --quick        # Quick smoke tests
-```
-
-### Linting and Type Checking
-```bash
-# No standard lint/typecheck commands found in codebase
-# Suggest adding these to the project if needed
-```
+---
 
 ## Architecture Overview
 
-**Core Flow**: Query → Pre-retrieval Analysis → Tool Selection → Retrieval (with BM25) → Ranking → Response Generation
+**Core Flow**: Query → Pre-retrieval Analysis → Tool Selection → Retrieval (BM25 + Vector) → Ranking (LLM → XGBoost → MMR) → Response
 
-**Backend Key Files** (refer to detailed documentation only when needed):
-- Entry Point: `webserver/aiohttp_server.py`
-- Request Handler: `core/baseHandler.py`
+### Key Files (Refer to `.claude/systemmap.md` for full API details)
+
+**Backend**:
+- Entry: `webserver/aiohttp_server.py`
+- Handler: `core/baseHandler.py`
 - Pre-retrieval: `pre_retrieval/` (decontextualization, query rewrite)
-- Methods: `methods/` (tool implementations)
-  - Deep Research: `methods/deep_research.py`
-- Retrieval: `retrieval/` (vector DB clients)
-  - BM25 Integration: `core/bm25.py`
-- Ranking: `core/ranking.py` (LLM → XGBoost → MMR pipeline)
-  - XGBoost: `core/xgboost_ranker.py`
-  - MMR: `core/mmr.py`
-- Reasoning System: `reasoning/` (multi-agent research system)
-  - Orchestrator: `reasoning/orchestrator.py` (actor-critic loop)
-  - Agents: `reasoning/agents/` (analyst, critic, writer, clarification)
-  - Filters: `reasoning/filters/source_tier.py`
-  - Utils: `reasoning/utils/` (console_tracer, iteration_logger)
-- Query Analysis: `core/query_analysis/time_range_extractor.py`
-- Utils: `core/utils/json_repair_utils.py`
-- LLM Providers: `llm/`
-- Configuration: `config/` (YAML files including `config_reasoning.yaml`)
+- Methods: `methods/deep_research.py` (reasoning integration)
+- Retrieval: `retrieval/` + `core/bm25.py`
+- Ranking: `core/ranking.py`, `core/xgboost_ranker.py`, `core/mmr.py`
+- Reasoning: `reasoning/orchestrator.py`, `reasoning/schemas_enhanced.py`, `reasoning/agents/`
+- Analytics: `core/analytics_db.py` (SQLite local, PostgreSQL production via `ANALYTICS_DATABASE_URL`)
+- Config: `config/config_reasoning.yaml`
 
 **Frontend** (Production):
-- Main UI: `static/news-search-prototype.html`
-- SSE Streaming: Built-in EventSource
-- Rendering: Inline JavaScript with custom DOM manipulation
+- Main UI: `static/news-search-prototype.html` (SSE streaming, inline JS)
 
-**Chat System** (In Development):
-- Backend: `chat/websocket.py`, `chat/conversation.py`, `chat/participants.py`
-- Frontend: `static/fp-chat-interface.js`, `static/conversation-manager.js`
-
-See `systemmap.md` for API details and `.claude/SIMPLE_ARCHITECTURE.md` for chat design.
+**Chat** (In Development):
+- Backend: `chat/websocket.py`, `chat/conversation.py`
+- See `.claude/SIMPLE_ARCHITECTURE.md` for design
 
 ### Key Design Patterns
-
-1. **Streaming Responses**: SSE (Server-Sent Events) for real-time AI responses
-2. **Parallel Processing**: Multiple pre-retrieval checks run concurrently
-3. **Wrapper Pattern**: NLWebParticipant wraps existing handlers without modification
+1. **Streaming**: SSE for real-time responses
+2. **Parallel Processing**: Concurrent pre-retrieval checks
+3. **Wrapper Pattern**: NLWebParticipant wraps handlers without modification
 4. **Cache-First**: Memory cache for active conversations
 
-## Important Implementation Details
-
-### Message Flow
-1. User query arrives via WebSocket/HTTP
-2. Parallel pre-retrieval analysis (relevance, decontextualization, memory)
-3. Tool selection based on tools.xml manifest
-4. Vector database retrieval with hybrid search:
-   - Intent detection (EXACT_MATCH, SEMANTIC, or BALANCED)
-   - Vector similarity (embedding search)
-   - BM25 keyword scoring
-   - Combined score: α * vector_score + β * bm25_score (α/β adjusted by intent)
-5. LLM-based ranking and snippet generation
-6. Optional post-processing (summarization, generation)
-7. Streaming response back to client
-
-## Testing Strategy
-
-The testing framework (`code/python/testing/`) supports three test types:
-- **end_to_end**: Full pipeline testing
-- **site_retrieval**: Site discovery testing
-- **query_retrieval**: Vector search testing
-
-Test files use JSON format with test_type field and type-specific parameters.
+---
 
 ## Current Development Focus
 
-**Current Status**: Reasoning Module & Deep Research System (Completed Dec 2024)
+### Recently Completed (Dec 2025)
+✅ Reasoning System (Actor-Critic, 4 agents, hallucination guard)
+✅ Deep Research (time range, clarification, citations)
+✅ XGBoost ML Ranking (Phase A/B/C)
+✅ BM25 + MMR algorithms
+✅ Analytics Infrastructure (SQLite + PostgreSQL)
 
-**Recently Completed**:
-- ✅ **Reasoning System**: Multi-agent Actor-Critic architecture for deep research
-  - Orchestrator with hallucination guard and citation verification
-  - Four specialized agents (Analyst, Critic, Writer, Clarification)
-  - Source tier filtering with 3 modes (strict/discovery/monitor)
-  - Console tracer and iteration logger for debugging
-- ✅ **Deep Research Method**: Integrated reasoning orchestrator with NLWeb pipeline
-  - Time range extraction (3-tier parsing: Regex → LLM → Keyword)
-  - Clarification flow for ambiguous queries
-  - SSE streaming with citation links
-- ✅ **XGBoost ML Ranking**: Complete Phase A/B/C deployment
-  - 29 features from analytics schema
-  - Training pipeline with model registry
-  - Production integration (LLM → XGBoost → MMR)
-- ✅ **BM25 + MMR**: Keyword relevance and diversity re-ranking algorithms
-- ✅ **Analytics Infrastructure**: PostgreSQL logging with full user interaction tracking
+**Details**: See `.claude/COMPLETED_WORK.md`
 
-**Next Focus**:
-- Performance optimization for reasoning system (latency/cost reduction)
-- User experience improvements (clarification UI, progress indicators)
-- Citation quality refinement
+### Current Work
+🔄 **Performance Optimization**: Latency profiling, token reduction, citation UX refinement
 
-## Algorithm Documentation Practice
+**Roadmap**: See `.claude/NEXT_STEPS.md` and `.claude/CONTEXT.md`
 
-<!-- TODO: Remove/compress this section after algorithm development phase is complete -->
+---
 
-**IMPORTANT**: When implementing or modifying search/ranking algorithms, ALWAYS document in the `algo/` directory.
+## Important Development Rules
 
-### Documentation Requirements
+### NEVER Reward Hack
+CRITICAL: Always look for comprehensive solutions.
+- Think from a systems perspective, how will the upper and lower modules be affected? How will the dependencies be affected? Am I naming a class or method out of nowhere, or reusing existing ones?
+- Never stop at the first problem that you find: most of the time multiple fixes are required, aim to fix all of them at one user request.
+### Algorithm Changes
+**CRITICAL**: When modifying search/ranking algorithms, **MUST** document in `algo/` directory.
 
-1. **Create/Update Algorithm Documentation** (`algo/{ALGORITHM_NAME}_implementation.md`):
-   - Algorithm purpose and overview
-   - Mathematical formulas and parameters
-   - Implementation details (tokenization, scoring, integration points)
-   - Code structure and file locations
-   - Testing strategy
-   - Performance metrics and expected impact
-   - Rollback plan
+- Create/update `algo/{ALGORITHM_NAME}_implementation.md`
+- Include: purpose, formulas, parameters, implementation details, testing strategy
+- Examples: `algo/BM25_implementation.md`, `algo/XGBoost_implementation.md`
 
-2. **When to Document**:
-   - Before implementing a new algorithm
-   - When modifying existing algorithm parameters
-   - When changing integration points or data flow
-   - After A/B testing results (update with findings)
+### Python Version
+**Use Python 3.11** (NOT 3.13). Python 3.13 breaks `qdrant-client` compatibility.
 
-3. **Examples of Algorithms to Document**:
-   - BM25 (keyword relevance) ✅ IMPLEMENTED
-   - MMR (diversity re-ranking) ✅ IMPLEMENTED
-   - Intent detection (query classification for α/β and λ adjustment) ✅ IMPLEMENTED
-   - XGBoost (machine learning ranking) ✅ IMPLEMENTED
-   - Temporal boosting (recency scoring) - Partially implemented
-   - Vector similarity (embedding-based) - Existing
+### Analytics Database
+**Dual database support**: System auto-detects via `ANALYTICS_DATABASE_URL` environment variable.
+- **Local development**: SQLite (default, no setup needed)
+- **Production**: PostgreSQL (Neon.tech, set `ANALYTICS_DATABASE_URL`)
 
-### File Naming Convention
-
-```
-algo/
-  BM25_implementation.md          # Keyword relevance algorithm
-  MMR_implementation.md           # Diversity re-ranking
-  XGBoost_implementation.md       # ML ranking model
-  temporal_boosting.md            # Time decay functions
-  hybrid_scoring.md               # Score combination strategies
-```
-
-## Notes for Development
-
-- Always check existing patterns in neighboring files before implementing new features
-- The system should be very scalable - optimize carefully
-- Always think about modularization
+### Code Style
+- Prefer editing existing files over creating new ones
+- Check patterns in neighboring files before implementing
 - Configuration changes require server restart
-- Algorithm changes require documentation in `algo/` directory (see Algorithm Documentation Practice above)
+- No emojis unless explicitly requested
 
-## Docker Deployment Best Practices
+### Docker Deployment
+**Critical**: Always clear Docker build cache when changing base images.
 
-**Critical Lesson**: Use Python 3.11 for production (not 3.13). Python 3.13 causes library incompatibilities (e.g., `qdrant-client` missing methods). Always clear Docker build cache when changing base images.
+**Details**: See `.claude/docker_deployment.md` (only when deploying with Docker)
 
-**Only refer to `.claude/docker_deployment.md` when the task requires Docker deployment.**
+---
+
+## Additional Documentation
+
+- **Architecture**: `.claude/SIMPLE_ARCHITECTURE.md` (Chat design)
+- **API Reference**: `.claude/systemmap.md` (HTTP/SSE endpoints)
+- **Coding Standards**: `.claude/codingrules.md` (naming, error handling)
+- **User Flows**: `.claude/userworkflow.md` (UX patterns)
+- **Progress Tracking**: `.claude/PROGRESS.md` (milestone history)
+- **Algorithm Specs**: `algo/*.md` (BM25, MMR, XGBoost, etc.)

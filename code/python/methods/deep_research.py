@@ -48,10 +48,15 @@ class DeepResearchHandler(NLWebHandler):
         config_enable_kg = CONFIG.reasoning_params.get("features", {}).get("knowledge_graph_generation", False)
         self.enable_kg = query_params.get('enable_kg', config_enable_kg)
 
+        # Stage 5: Extract enable_web_search parameter (default: False)
+        enable_web_search_param = query_params.get('enable_web_search', 'false')
+        self.enable_web_search = enable_web_search_param in [True, 'true', 'True', '1']
+
         logger.info("DeepResearchHandler initialized")
         logger.info(f"  Query: {self.query}")
         logger.info(f"  Site: {self.site}")
         logger.info(f"  Enable KG: {self.enable_kg}")
+        logger.info(f"  Enable Web Search: {self.enable_web_search}")
 
         # Future: Initialize Orchestrator
         # self.orchestrator = DeepResearchOrchestrator(...)
@@ -192,7 +197,8 @@ class DeepResearchHandler(NLWebHandler):
                 mode=self.research_mode,
                 items=items,
                 temporal_context=temporal_context,
-                enable_kg=self.enable_kg  # Phase KG: Pass per-request KG flag
+                enable_kg=self.enable_kg,  # Phase KG: Pass per-request KG flag
+                enable_web_search=self.enable_web_search  # Stage 5: Pass web search flag
             )
 
         # Send results using parent's message sender
@@ -428,6 +434,7 @@ class DeepResearchHandler(NLWebHandler):
 1. **時間歧義 (time)**：
    - 查詢涉及時間敏感的人物、政策、事件，但未指定時間範圍
    - 例如：「蔡英文的兩岸政策」（任期內 vs 卸任後？）
+   - **CRITICAL**：對於「最新」「股價」「現況」等即時性查詢，**必須提供「今天」和「最近一周」選項**
    - **必須提供「全面回顧」選項**，讓用戶可以選擇不限定時間
 
 2. **範圍歧義 (scope)**：
@@ -485,6 +492,8 @@ class DeepResearchHandler(NLWebHandler):
       "question": "請問是指哪個時期？",
       "required": true,
       "options": [
+        {{"label": "今天", "intent": "today", "query_modifier": "今天"}},
+        {{"label": "最近一周", "intent": "week", "query_modifier": "最近一周"}},
         {{"label": "任期內(2016-2024)", "intent": "term_period", "query_modifier": "任期內"}},
         {{"label": "卸任後(2024至今)", "intent": "post_term", "query_modifier": "卸任後"}},
         {{"label": "全面回顧", "intent": "comprehensive_time", "query_modifier": "", "is_comprehensive": true}}

@@ -34,10 +34,10 @@
 - Console tracer and iteration logger
 
 **Current Optimization Targets**:
-- Reduce iteration latency (Analyst/Critic/Writer phases)
-- Optimize prompt token usage
-- Improve citation quality and formatting
-- Enhance clarification question generation
+1. **Latency Profiling**: Measure actual reasoning pipeline timing (Analyst/Critic/Writer)
+2. **Token Reduction**: Audit prompts for redundancy, target 20-30% reduction
+3. **Citation UX**: Test link rendering formats with real users
+4. **Clarification Flow**: A/B test question formats for clarity
 
 **Key Metrics**:
 - Reasoning iterations: Max 3 (actor-critic loop)

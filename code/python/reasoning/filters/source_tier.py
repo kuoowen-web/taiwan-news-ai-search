@@ -204,8 +204,39 @@ class SourceTierFilter:
         """
         if tier == 999:
             return "[Tier Unknown | unknown]"
+        elif tier == 6:
+            # Stage 5: Tier 6 for LLM Knowledge and Web Reference
+            return f"[Tier 6 | {source_type}]"
         else:
             return f"[Tier {tier} | {source_type}]"
+
+    def is_tier_6_source(self, item: Dict) -> bool:
+        """
+        Check if an item is a Tier 6 source (LLM Knowledge or Web Reference).
+
+        Args:
+            item: Item dict with _reasoning_metadata
+
+        Returns:
+            True if tier 6, False otherwise
+        """
+        metadata = item.get("_reasoning_metadata", {})
+        return metadata.get("tier") == 6
+
+    def get_tier_6_type(self, item: Dict) -> str:
+        """
+        Get the Tier 6 subtype (llm_knowledge or web_reference).
+
+        Args:
+            item: Item dict with _reasoning_metadata
+
+        Returns:
+            "llm_knowledge", "web_reference", or empty string
+        """
+        metadata = item.get("_reasoning_metadata", {})
+        if metadata.get("tier") == 6:
+            return metadata.get("type", "")
+        return ""
 
     def get_tier(self, source: str) -> int:
         """

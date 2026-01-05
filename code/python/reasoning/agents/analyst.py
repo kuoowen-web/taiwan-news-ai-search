@@ -36,7 +36,8 @@ class AnalystAgent(BaseReasoningAgent):
         formatted_context: str,
         mode: str,
         temporal_context: Optional[Dict[str, Any]] = None,
-        enable_kg: bool = False
+        enable_kg: bool = False,
+        enable_web_search: bool = False
     ) -> AnalystResearchOutput:
         """
         Enhanced research with optional argument graph generation and knowledge graph.
@@ -47,6 +48,7 @@ class AnalystAgent(BaseReasoningAgent):
             mode: Research mode (strict, discovery, monitor)
             temporal_context: Optional temporal information (time range, etc.)
             enable_kg: Enable knowledge graph generation (per-request override)
+            enable_web_search: Enable web search for dynamic data (Stage 5)
 
         Returns:
             AnalystResearchOutput (or Enhanced version if feature enabled)
@@ -58,7 +60,10 @@ class AnalystAgent(BaseReasoningAgent):
         enable_graphs = CONFIG.reasoning_params.get("features", {}).get("argument_graphs", False)
         # enable_kg is now a parameter (per-request control)
 
-        self.logger.info(f"Analyst.research() - enable_kg={enable_kg}, enable_graphs={enable_graphs}")
+        # Check Stage 5 feature flag
+        enable_gap_enrichment = CONFIG.reasoning_params.get("features", {}).get("gap_knowledge_enrichment", False)
+
+        self.logger.info(f"Analyst.research() - enable_kg={enable_kg}, enable_graphs={enable_graphs}, enable_web_search={enable_web_search}, enable_gap_enrichment={enable_gap_enrichment}")
 
         # Build the system prompt from PDF (pages 7-10)
         system_prompt = self._build_research_prompt(
@@ -67,7 +72,9 @@ class AnalystAgent(BaseReasoningAgent):
             mode=mode,
             temporal_context=temporal_context,
             enable_argument_graph=enable_graphs,  # Phase 2
-            enable_knowledge_graph=enable_kg  # Phase KG
+            enable_knowledge_graph=enable_kg,  # Phase KG
+            enable_gap_enrichment=enable_gap_enrichment,  # Stage 5
+            enable_web_search=enable_web_search  # Stage 5
         )
 
         # Choose schema based on feature flags (dynamic schema selection)
@@ -104,7 +111,8 @@ class AnalystAgent(BaseReasoningAgent):
         self,
         original_draft: str,
         review: CriticReviewOutput,
-        formatted_context: str
+        formatted_context: str,
+        query: str = None
     ) -> AnalystResearchOutput:
         """
         Revise draft based on critic's feedback.
@@ -113,6 +121,7 @@ class AnalystAgent(BaseReasoningAgent):
             original_draft: Previous draft content
             review: Critic's review with validated schema
             formatted_context: Pre-formatted context string with [1], [2] IDs
+            query: Original user query (Stage 5: prevent topic drift)
 
         Returns:
             AnalystResearchOutput with validated schema
@@ -121,7 +130,8 @@ class AnalystAgent(BaseReasoningAgent):
         revision_prompt = self._build_revision_prompt(
             original_draft=original_draft,
             review=review,
-            formatted_context=formatted_context
+            formatted_context=formatted_context,
+            original_query=query
         )
 
         # Call LLM with validation
@@ -140,7 +150,9 @@ class AnalystAgent(BaseReasoningAgent):
         mode: str,
         temporal_context: Optional[Dict[str, Any]] = None,
         enable_argument_graph: bool = False,
-        enable_knowledge_graph: bool = False
+        enable_knowledge_graph: bool = False,
+        enable_gap_enrichment: bool = False,
+        enable_web_search: bool = False
     ) -> str:
         """
         Build research prompt from PDF System Prompt (pages 7-10).
@@ -152,6 +164,8 @@ class AnalystAgent(BaseReasoningAgent):
             temporal_context: Optional time range information
             enable_argument_graph: Enable argument graph generation (Phase 2)
             enable_knowledge_graph: Enable knowledge graph generation (Phase KG)
+            enable_gap_enrichment: Enable gap knowledge enrichment (Stage 5)
+            enable_web_search: Enable web search for dynamic data (Stage 5)
 
         Returns:
             Complete system prompt string
@@ -159,6 +173,74 @@ class AnalystAgent(BaseReasoningAgent):
         time_range = ""
         if temporal_context:
             time_range = f"\n- Time Range: {temporal_context.get('start', 'N/A')} to {temporal_context.get('end', 'N/A')}"
+
+        # Stage 5: Add mandatory pre-check if gap enrichment is enabled
+        mandatory_precheck = ""
+        if enable_gap_enrichment and enable_web_search:
+            from datetime import datetime
+            current_date = datetime.now().strftime("%Y-%m-%d")
+            current_year = datetime.now().year
+
+            mandatory_precheck = f"""
+⚠️ **強制前置檢查（MANDATORY PRE-CHECK）**：
+
+在開始分析之前，你**必須**先回答以下問題：
+
+1. 查詢是否包含「最新」「現任」「目前」「今天」「2024」「2025」「2026」等時效性詞彙？
+2. 查詢是否要求具體數字（股價、營收、市佔率、成長率）？
+3. 如果答案是「是」，你**必須**在 `gap_resolutions` 中添加一個 `web_search` 項目。
+
+**CRITICAL 工作流程**：
+- 如果需要 Web Search，在 `gap_resolutions` 中添加 web_search 項目
+- **同時**在 `draft` 中撰寫一個簡短說明（50-100字），解釋為何需要 Web Search
+- **不要**將 `status` 設為 "SEARCH_REQUIRED"，而是設為 "DRAFT_READY"
+- **不要**留空 `draft` 欄位（這會導致 Critic 拒絕）
+
+**CRITICAL 時間資訊**：
+- 今天的日期：{current_date}（現在是 {current_year} 年）
+- 你的 training data 截止於 2025 年 1 月，但現在已經過了你的 cutoff date
+- 所有「最新」「現任」「今天」「{current_year} 年」的查詢都需要 Web Search
+- 不要使用你 training data 中的資訊回答時效性問題
+
+當前查詢：「{query}」
+Web Search 狀態：**已啟用**
+
+**CRITICAL - Search Query 策略**：
+- ❌ 錯誤：使用具體日期（如「2026-01-02」「今天」），因為新聞可能尚未報導
+- ✅ 正確：使用「最新」「最近」「近期」「本週」等靈活詞彙
+- ✅ 正確：接受昨天或最近幾天的資料作為「最新」資訊
+- 範例：「NVIDIA 股價 最新」「NVIDIA 股價 近期走勢」「NVIDIA 最近表現」
+
+**正確範例**（需要 Web Search 時）：
+```json
+{{
+  "status": "DRAFT_READY",
+  "draft": "NVIDIA 最新股價屬於即時動態數據，現有資料庫中無當日股價資訊。系統將透過網路搜尋取得最新官方資料後提供完整分析。",
+  "gap_resolutions": [
+    {{
+      "gap_type": "current_data",
+      "resolution": "web_search",
+      "search_query": "NVIDIA 股價 最新",
+      "reason": "股價為時效性數據，需網路搜尋。使用「最新」而非具體日期以提高搜尋成功率"
+    }}
+  ],
+  "citations_used": [],
+  "reasoning_chain": "識別時效性查詢，標註需 Web Search。Search query 使用靈活詞彙（最新）而非具體日期（2026-01-02）"
+}}
+```
+
+**錯誤示範**（過於死板的 search query）：
+```json
+{{
+  "search_query": "NVIDIA 股價 2026-01-02"  // ❌ 太具體，新聞可能還沒報導今天的資料
+}}
+{{
+  "search_query": "NVIDIA 今天股價"  // ❌ 「今天」過於具體
+}}
+```
+
+---
+"""
 
         prompt = f"""你是一個新聞情報分析系統中的 **首席分析師 (Lead Analyst)**。
 
@@ -169,7 +251,7 @@ class AnalystAgent(BaseReasoningAgent):
 如果你的推論缺乏證據、違反來源模式設定，或包含邏輯謬誤，你的報告將被退回。
 請務必在生成草稿前進行嚴格的自我檢查。
 
----
+{mandatory_precheck}---
 
 ## 1. 動態搜尋配置 (Search Configuration)
 
@@ -568,13 +650,173 @@ class AnalystAgent(BaseReasoningAgent):
 """
             prompt += kg_instructions
 
+        # Add gap enrichment instructions if enabled (Stage 5)
+        if enable_gap_enrichment:
+            web_search_status = "**已啟用**" if enable_web_search else "**未啟用**（動態資料將標註為「需網路搜尋確認」）"
+            gap_instructions = f"""
+---
+
+## 階段 2.6：知識缺口偵測與補充 (Gap Detection & Enrichment - Stage 5)
+
+在分析過程中，你可能會發現知識缺口。請使用以下三種方式補充：
+
+### 🔹 補充方式一：LLM Knowledge（永遠可用）
+用於**靜態常識**，你可以直接回答並標註：
+- 定義、原理（「什麼是 EUV」、「Fabless 模式」）
+- 創辦人、歷史事實（「台積電由誰創立」）
+- 科學/技術概念
+- 公司靜態關係（「Google 母公司是 Alphabet」）
+
+**輸出範例**：
+```json
+{{
+  "gap_resolutions": [
+    {{
+      "gap_type": "definition",
+      "resolution": "llm_knowledge",
+      "reason": "EUV 是技術術語，屬於靜態科學知識",
+      "llm_answer": "EUV（極紫外光微影技術）是一種使用 13.5nm 極紫外光進行晶片製造的先進微影技術。",
+      "confidence": "high",
+      "topic": "euv_definition"
+    }}
+  ]
+}}
+```
+
+### 🔹 補充方式二：Web Search（使用者控制）
+用於**動態數據**，目前狀態：{web_search_status}
+
+需要 Web Search 的情況：
+- 現任職位（CEO、CFO）
+- 具體數字（股價、營收、市佔率 %）
+- 近 6 個月事件
+- 最新版本、最新財報
+
+**輸出範例**：
+```json
+{{
+  "gap_resolutions": [
+    {{
+      "gap_type": "current_data",
+      "resolution": "web_search",
+      "reason": "ASML 現任 CEO 是動態資訊，需要網路搜尋確認",
+      "search_query": "ASML CEO 2024 2025",
+      "requires_web_search": true,
+      "confidence": "low"
+    }}
+  ]
+}}
+```
+
+### 🔹 補充方式三：Internal Search（維持現狀）
+用於現有向量庫中可能存在的資料，與原有的 `new_queries` 機制相同。
+
+### ⛔ 安全紅線（絕對禁止使用 LLM Knowledge）
+
+**以下情況必須使用 `web_search`，嚴禁使用 `llm_knowledge` 直接回答**：
+
+1. **時效性資訊**：涉及「最新」「現任」「2024/2025年」「目前」等詞彙
+   - ❌ 錯誤：「亞馬遜現任CEO是安迪·賈西」（即使你知道，也不能直接回答）
+   - ✅ 正確：使用 `gap_resolutions` + `resolution: "web_search"`
+
+2. **具體數字**（除物理常數、數學公式）：
+   - 股價、營收、市佔率、成長率等
+
+3. **只有 80% 把握的資訊**：
+   - 不確定時，使用 `web_search` 而非猜測
+
+4. **嚴禁編造 URL**
+
+5. **未指定年份的財務數據**
+
+**CRITICAL**：即使你的 training data 包含相關資訊（例如 Andy Jassy 是 CEO），只要查詢涉及「現任」「最新」等時效性詞彙，就**必須**使用 `web_search`，不得使用 `llm_knowledge` 直接回答。
+
+### 輸出欄位說明
+- `gap_type`: 缺口類型（definition, current_data, context, background, relationship）
+- `resolution`: 解決方式（llm_knowledge, web_search, internal_search）
+- `reason`: 解釋為何選擇此方式（供 Critic 審查）
+- `llm_answer`: LLM 直接回答（僅限 llm_knowledge）
+- `search_query`: 搜尋查詢（web_search 或 internal_search）
+- `confidence`: 信心度（high/medium/low）
+- `requires_web_search`: 若為 true 但 web_search 未啟用，系統會標註「需網路搜尋確認」
+- `topic`: 主題標識（用於生成 `urn:llm:knowledge:{{topic}}`）
+
+**CRITICAL 工作流程（必須嚴格遵守）**：
+
+1. **第一步：檢查是否為時效性查詢**
+   - 查詢是否包含「現任」「最新」「2024/2025年」「目前」等詞彙？
+   - 查詢是否涉及股價、營收、CEO職位等動態數據？
+
+   **如果是時效性查詢**：
+   - ✅ 必須：在 `gap_resolutions` 中添加一個 web_search 項目
+   - ✅ 必須：設定 `gap_type: "current_data"`
+   - ✅ 必須：設定 `resolution: "web_search"`
+   - ✅ 必須：提供 `search_query`（搜尋關鍵字）
+   - ✅ 必須：設定 `requires_web_search: true`（若 web search 未啟用）
+   - ❌ 禁止：直接在草稿中提供具體答案
+   - ❌ 禁止：使用 `new_queries` 代替 `gap_resolutions`（new_queries 是給 internal_search 用的）
+
+2. **第二步：撰寫草稿**
+   - Web Search 未啟用：說明需要網路搜尋，不提供答案
+   - Web Search 已啟用：等待系統執行搜尋後再撰寫
+
+3. **第三步：區分 gap_resolutions vs new_queries**
+   - `gap_resolutions`：用於 LLM Knowledge 和 Web Search（Stage 5 新機制）
+   - `new_queries`：用於 Internal Search（向量庫搜尋，舊機制）
+   - **不要混用**：時效性查詢必須用 `gap_resolutions`，不要用 `new_queries`
+
+**範例 1：時效性查詢（現任CEO）- Web Search 未啟用**
+
+查詢：「亞馬遜現任CEO是誰」
+
+**正確輸出**：
+```json
+{{
+  "status": "DRAFT_READY",
+  "draft": "此為動態職位資訊，需要網路搜尋確認最新資料。**[此資訊需要網路搜尋確認]**\\n\\n建議啟用網路搜尋功能以獲取亞馬遜現任CEO的最新官方資訊。",
+  "gap_resolutions": [
+    {{
+      "gap_type": "current_data",
+      "resolution": "web_search",
+      "reason": "現任CEO屬於時效性資訊，必須透過網路搜尋取得最新資料",
+      "search_query": "Amazon CEO 2024 2025",
+      "requires_web_search": true,
+      "confidence": "low"
+    }}
+  ],
+  "citations_used": [],
+  "new_queries": [],
+  "missing_information": [],
+  "reasoning_chain": "識別出時效性資訊（現任CEO），使用 gap_resolutions 機制標註需要 web_search"
+}}
+```
+
+**錯誤示範 1**（直接提供答案）：
+```json
+{{
+  "draft": "亞馬遜現任CEO是安迪·賈西（Andy Jassy）...",  // ❌ 錯誤：不應直接回答
+  "gap_resolutions": []  // ❌ 錯誤：應使用 gap_resolutions
+}}
+```
+
+**錯誤示範 2**（使用 new_queries 代替 gap_resolutions）：
+```json
+{{
+  "new_queries": ["Amazon CEO 2024 2025"],  // ❌ 錯誤：應用 gap_resolutions
+  "gap_resolutions": []  // ❌ 錯誤：gap_resolutions 不應為空
+}}
+```
+"""
+            prompt += gap_instructions
+
         return prompt
 
     def _build_revision_prompt(
         self,
         original_draft: str,
         review: CriticReviewOutput,
-        formatted_context: str
+        formatted_context: str,
+        original_query: str = None
     ) -> str:
         """
         Build revision prompt from PDF Analyst Revise Prompt (pages 14-15).
@@ -583,6 +825,7 @@ class AnalystAgent(BaseReasoningAgent):
             original_draft: Previous draft content
             review: Critic's validated review
             formatted_context: Pre-formatted context with [ID] citations
+            original_query: Original user query (Stage 5 fix: prevent topic drift)
 
         Returns:
             Complete revision prompt string
@@ -592,9 +835,21 @@ class AnalystAgent(BaseReasoningAgent):
         logical_gaps_text = "\n".join(f"- {g}" for g in review.logical_gaps)
         source_issues_text = "\n".join(f"- {i}" for i in review.source_issues)
 
+        # Stage 5: Add query reminder to prevent topic drift
+        query_reminder = ""
+        if original_query:
+            query_reminder = f"""
+**CRITICAL - 原始查詢（絕對不能偏離）**：
+「{original_query}」
+
+**重要**：你的修改必須回答這個查詢。不要偏離主題，不要開始回答其他問題。
+"""
+
         prompt = f"""## 修改任務
 
 你之前的研究草稿被 Critic 退回。請根據以下反饋進行**針對性修改**，不要重寫整份報告。
+
+{query_reminder}
 
 ### Critic 的批評
 
@@ -677,6 +932,14 @@ class AnalystAgent(BaseReasoningAgent):
 - 確保所有字串值用雙引號包圍且正確閉合
 - 不要截斷 JSON - 確保結構完整
 - 必須包含所有 AnalystResearchOutput schema 要求的欄位
+
+**CRITICAL 欄位名稱（絕對不能錯）**：
+- 使用 "draft" 欄位（不是 "content"）
+- 使用 "status" 欄位，值必須是 "DRAFT_READY" 或 "SEARCH_REQUIRED"（不是 "COMPLETED"）
+- 使用 "reasoning_chain" 欄位（不是其他名稱）
+- 使用 "citations_used" 欄位（整數陣列）
+- 使用 "new_queries" 欄位（字串陣列，可以為空）
+- 使用 "missing_information" 欄位（字串陣列，可以為空）
 """
         return prompt
 
