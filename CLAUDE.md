@@ -70,6 +70,11 @@ Natural language search system for news websites. Goal: trusted, accurate, logic
 CRITICAL: Always look for comprehensive solutions.
 - Think from a systems perspective, how will the upper and lower modules be affected? How will the dependencies be affected? Am I naming a class or method out of nowhere, or reusing existing ones?
 - Never stop at the first problem that you find: most of the time multiple fixes are required, aim to fix all of them at one user request.
+
+### Clean up behind you
+
+If you create any temporary new files, scripts, or helper files for iteration, clean up these files by removing them at the end of the task.
+
 ### Algorithm Changes
 **CRITICAL**: When modifying search/ranking algorithms, **MUST** document in `algo/` directory.
 

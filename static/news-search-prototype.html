@@ -1614,11 +1614,255 @@
             height: 12px;
             border-radius: 50%;
         }
+
+        /* Sidebar for User Knowledge Base */
+        .sidebar {
+            position: fixed;
+            left: 0;
+            top: 60px;
+            width: 280px;
+            height: calc(100vh - 60px);
+            background: white;
+            border-right: 1px solid #e5e5e5;
+            padding: 20px;
+            overflow-y: auto;
+            z-index: 90;
+            display: none; /* Hidden by default, shown in chat/deep_research mode */
+        }
+
+        .sidebar.visible {
+            display: block;
+        }
+
+        .sidebar-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sidebar-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .sidebar-toggle input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .sidebar-toggle-text {
+            font-size: 13px;
+            color: #374151;
+            flex: 1;
+        }
+
+        .sidebar-divider {
+            height: 1px;
+            background: #e5e5e5;
+            margin: 16px 0;
+        }
+
+        .file-list {
+            margin-bottom: 16px;
+        }
+
+        .file-list-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #6b7280;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            margin-bottom: 6px;
+            font-size: 13px;
+            color: #374151;
+        }
+
+        .file-item-icon {
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+
+        .file-item-name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .file-item-status {
+            font-size: 11px;
+            color: #6b7280;
+        }
+
+        .file-item-status.processing {
+            color: #2563eb;
+        }
+
+        .file-item-status.ready {
+            color: #059669;
+        }
+
+        .file-item-status.failed {
+            color: #dc2626;
+        }
+
+        .upload-button {
+            width: 100%;
+            padding: 10px;
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .upload-button:hover {
+            background: #1d4ed8;
+        }
+
+        .upload-button:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+
+        /* Upload Progress Modal */
+        .upload-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .upload-modal.visible {
+            display: flex;
+        }
+
+        .upload-modal-content {
+            background: white;
+            border-radius: 8px;
+            padding: 24px;
+            max-width: 400px;
+            width: 90%;
+        }
+
+        .upload-modal-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+
+        .upload-progress {
+            margin: 16px 0;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e5e7eb;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: #2563eb;
+            transition: width 0.3s ease;
+        }
+
+        .progress-text {
+            font-size: 14px;
+            color: #6b7280;
+            margin-top: 8px;
+        }
+
+        /* Adjust main content when sidebar is visible */
+        main.with-sidebar {
+            margin-left: 280px;
+        }
     </style>
     <!-- D3.js for Knowledge Graph Visualization -->
     <script src="https://d3js.org/d3.v7.min.js"></script>
 </head>
 <body>
+    <!-- Sidebar for User Knowledge Base -->
+    <div class="sidebar" id="userKnowledgeSidebar">
+        <div class="sidebar-title">
+            <span>📚</span>
+            <span>我的知識庫</span>
+        </div>
+
+        <div class="sidebar-toggle" onclick="togglePrivateSources()">
+            <input type="checkbox" id="includePrivateSourcesCheckbox" checked>
+            <span class="sidebar-toggle-text">包含我的文件</span>
+        </div>
+
+        <div class="sidebar-divider"></div>
+
+        <div class="file-list">
+            <div class="file-list-title">已上傳文件</div>
+            <div id="fileListContainer">
+                <div style="color: #9ca3af; font-size: 13px; text-align: center; padding: 20px 0;">
+                    尚未上傳文件
+                </div>
+            </div>
+        </div>
+
+        <button class="upload-button" onclick="triggerFileUpload()">
+            <span>+</span>
+            <span>上傳文件</span>
+        </button>
+
+        <input type="file" id="fileInput" style="display: none;" accept=".pdf,.docx,.txt,.md" onchange="handleFileSelect(event)">
+    </div>
+
+    <!-- Upload Progress Modal -->
+    <div class="upload-modal" id="uploadModal">
+        <div class="upload-modal-content">
+            <div class="upload-modal-title">處理文件中...</div>
+            <div class="upload-progress">
+                <div class="progress-bar">
+                    <div class="progress-bar-fill" id="progressBarFill" style="width: 0%"></div>
+                </div>
+                <div class="progress-text" id="progressText">準備上傳...</div>
+            </div>
+        </div>
+    </div>
+
     <header>
         <div class="container">
             <div class="header-content">
@@ -1923,6 +2167,11 @@
         // Mode tracking: 'search', 'deep_research', or 'chat'
         let currentMode = 'search';
 
+        // User Knowledge Base - temporary user_id (will be replaced with OAuth)
+        const TEMP_USER_ID = 'demo_user_001';
+        let userFiles = [];
+        let includePrivateSources = true; // Default to true
+
         // ==================== ANALYTICS INITIALIZATION ====================
         const analyticsTracker = new AnalyticsTrackerSSE('/api/analytics/event');
         let currentAnalyticsQueryId = null;
@@ -2045,6 +2294,9 @@
                     kgToggleContainer.style.display = 'none';
                     webSearchToggleContainer.style.display = 'none';
                 }
+
+                // Update sidebar visibility based on new mode
+                updateSidebarVisibility();
             });
         });
 
@@ -2892,6 +3144,13 @@
                 if (currentConversationId) {
                     deepResearchUrl.searchParams.append('conversation_id', currentConversationId);
                     console.log('[Deep Research] Using existing conversation_id:', currentConversationId);
+                }
+
+                // Add private sources parameters if enabled
+                if (includePrivateSources) {
+                    deepResearchUrl.searchParams.append('include_private_sources', 'true');
+                    deepResearchUrl.searchParams.append('user_id', TEMP_USER_ID);
+                    console.log('[Deep Research] Private sources enabled for user:', TEMP_USER_ID);
                 }
 
                 console.log('Deep Research URL:', deepResearchUrl.toString());
@@ -3828,6 +4087,12 @@
                 chatUrl.searchParams.append('generate_mode', 'generate');
                 chatUrl.searchParams.append('streaming', 'true');
                 chatUrl.searchParams.append('free_conversation', 'true'); // Backend flag for free chat mode
+
+                // Add private sources parameters if enabled
+                if (includePrivateSources) {
+                    chatUrl.searchParams.append('include_private_sources', 'true');
+                    chatUrl.searchParams.append('user_id', TEMP_USER_ID);
+                }
 
                 // Send full context: original search + chat history
                 if (allPrevQueries.length > 0) {
@@ -4883,6 +5148,185 @@
                 };
             }
         }
+
+        // ==================== USER KNOWLEDGE BASE FUNCTIONS ====================
+
+        // Toggle sidebar visibility based on mode
+        function updateSidebarVisibility() {
+            const sidebar = document.getElementById('userKnowledgeSidebar');
+            const mainElement = document.querySelector('main');
+
+            // Show sidebar only in chat and deep_research modes
+            if (currentMode === 'chat' || currentMode === 'deep_research') {
+                sidebar.classList.add('visible');
+                mainElement.classList.add('with-sidebar');
+            } else {
+                sidebar.classList.remove('visible');
+                mainElement.classList.remove('with-sidebar');
+            }
+        }
+
+        // Toggle private sources checkbox
+        function togglePrivateSources() {
+            const checkbox = document.getElementById('includePrivateSourcesCheckbox');
+            includePrivateSources = checkbox.checked;
+            console.log('Include private sources:', includePrivateSources);
+        }
+
+        // Trigger file input click
+        function triggerFileUpload() {
+            document.getElementById('fileInput').click();
+        }
+
+        // Handle file selection
+        async function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            console.log('File selected:', file.name, file.size, 'bytes');
+
+            // Show upload modal
+            const modal = document.getElementById('uploadModal');
+            const progressBar = document.getElementById('progressBarFill');
+            const progressText = document.getElementById('progressText');
+
+            modal.classList.add('visible');
+            progressBar.style.width = '0%';
+            progressText.textContent = '準備上傳...';
+
+            try {
+                // Create form data
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('user_id', TEMP_USER_ID);
+
+                // Upload file
+                progressText.textContent = '正在上傳文件...';
+                const response = await fetch('/api/user/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || '上傳失敗');
+                }
+
+                const result = await response.json();
+                console.log('Upload result:', result);
+
+                const sourceId = result.source_id;
+
+                // Connect to SSE for progress updates
+                progressText.textContent = '正在處理文件...';
+                const eventSource = new EventSource(`/api/user/upload/${sourceId}/progress?user_id=${TEMP_USER_ID}`);
+
+                eventSource.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    console.log('Progress:', data);
+
+                    progressBar.style.width = data.progress + '%';
+                    progressText.textContent = data.message;
+
+                    if (data.status === 'completed') {
+                        eventSource.close();
+                        setTimeout(() => {
+                            modal.classList.remove('visible');
+                            loadUserFiles(); // Refresh file list
+                        }, 1000);
+                    } else if (data.status === 'failed') {
+                        eventSource.close();
+                        alert('文件處理失敗: ' + data.message);
+                        modal.classList.remove('visible');
+                    }
+                };
+
+                eventSource.onerror = (error) => {
+                    console.error('SSE error:', error);
+                    eventSource.close();
+                    modal.classList.remove('visible');
+                    alert('處理過程中斷，請稍後再試');
+                };
+
+            } catch (error) {
+                console.error('Upload error:', error);
+                alert('上傳失敗: ' + error.message);
+                modal.classList.remove('visible');
+            }
+
+            // Reset file input
+            event.target.value = '';
+        }
+
+        // Load user files list
+        async function loadUserFiles() {
+            try {
+                const response = await fetch(`/api/user/sources?user_id=${TEMP_USER_ID}`);
+                if (!response.ok) {
+                    throw new Error('Failed to load files');
+                }
+
+                const result = await response.json();
+                userFiles = result.sources || [];
+                console.log('Loaded user files:', userFiles);
+
+                renderFileList();
+            } catch (error) {
+                console.error('Error loading files:', error);
+            }
+        }
+
+        // Render file list
+        function renderFileList() {
+            const container = document.getElementById('fileListContainer');
+
+            if (userFiles.length === 0) {
+                container.innerHTML = '<div style="color: #9ca3af; font-size: 13px; text-align: center; padding: 20px 0;">尚未上傳文件</div>';
+                return;
+            }
+
+            container.innerHTML = userFiles.map(file => {
+                const icon = getFileIcon(file.file_type);
+                const statusClass = file.status;
+                const statusText = getStatusText(file.status);
+
+                return `
+                    <div class="file-item">
+                        <span class="file-item-icon">${icon}</span>
+                        <span class="file-item-name" title="${file.name}">${file.name}</span>
+                        <span class="file-item-status ${statusClass}">${statusText}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Get file icon based on type
+        function getFileIcon(fileType) {
+            const icons = {
+                '.pdf': '📄',
+                '.docx': '📝',
+                '.txt': '📃',
+                '.md': '📋'
+            };
+            return icons[fileType] || '📄';
+        }
+
+        // Get status text
+        function getStatusText(status) {
+            const texts = {
+                'uploading': '上傳中',
+                'processing': '處理中',
+                'ready': '就緒',
+                'failed': '失敗'
+            };
+            return texts[status] || status;
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            loadUserFiles();
+            updateSidebarVisibility();
+        });
 
     </script>
 

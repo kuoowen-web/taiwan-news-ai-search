@@ -285,8 +285,54 @@ class GenerateAnswer(NLWebHandler):
                     else:
                         print(f"[FREE_CONVERSATION] ✗ No cached results found, proceeding without articles")
                 except Exception as e:
-                    logger.error(f"Error retrieving cached results for free conversation: {e}")
-                    print(f"[FREE_CONVERSATION] Cache error: {e}")
+                    logger.exception(f"Error retrieving cached results for free conversation: {e}")
+
+            # Check for private sources even in free conversation mode
+            logger.info(f"[FREE_CONVERSATION] Checking private sources: include_private_sources={getattr(self, 'include_private_sources', 'NOT SET')}, user_id={getattr(self, 'user_id', 'NOT SET')}")
+            print(f"[FREE_CONVERSATION] include_private_sources={getattr(self, 'include_private_sources', 'NOT SET')}, user_id={getattr(self, 'user_id', 'NOT SET')}")
+            if self.include_private_sources and self.user_id:
+                try:
+                    from core.user_data_retriever import search_user_documents, format_private_result_for_display
+                    import json
+
+                    logger.info(f"[FREE_CONVERSATION] Searching user's private documents for user_id={self.user_id}")
+                    print(f"[FREE_CONVERSATION] Searching private documents")
+
+                    # Search private documents (already in async context, just await)
+                    private_results = await search_user_documents(
+                        query=self.query,
+                        user_id=self.user_id,
+                        top_k=10,
+                        query_params=self.query_params
+                    )
+
+                    if private_results:
+                        logger.info(f"[FREE_CONVERSATION] Found {len(private_results)} private documents")
+                        print(f"[FREE_CONVERSATION] ✓ Found {len(private_results)} private documents")
+
+                        # Format private results and add to items
+                        private_items = []
+                        for result in private_results:
+                            formatted = format_private_result_for_display(result)
+                            private_item = [
+                                formatted['url'],
+                                json.dumps({'text': formatted['text'], 'metadata': formatted.get('metadata', {})}),
+                                formatted['title'],
+                                formatted['site']
+                            ]
+                            private_items.append(private_item)
+
+                        # Prepend private items to existing items
+                        if not hasattr(self, 'items') or self.items is None:
+                            self.items = []
+                        self.items = private_items + self.items
+                        logger.info(f"[FREE_CONVERSATION] Added {len(private_items)} private items to context")
+                    else:
+                        logger.info("[FREE_CONVERSATION] No private documents found")
+
+                except Exception as e:
+                    logger.exception(f"[FREE_CONVERSATION] Error searching private documents: {e}")
+                    print(f"[FREE_CONVERSATION] Private search error: {e}")
 
             # Use conversation-only synthesis (with or without cached articles)
             logger.info("Free conversation mode: proceeding to answer synthesis using conversation context")
@@ -501,10 +547,26 @@ class GenerateAnswer(NLWebHandler):
                     conversation_context += f"{idx}. {prev_q}\n"
                 conversation_context += "\n"
 
-            # Build article context if we have cached articles
+            # Build article context if we have cached articles OR private documents
             article_context = ""
+
+            # Add private documents first (from self.items)
+            if self.items and len(self.items) > 0:
+                article_context += "\n===您的私人文件===\n"
+                for idx, item in enumerate(self.items, 1):
+                    url, json_str, title, site = item
+                    import json
+                    content_obj = json.loads(json_str) if json_str else {}
+                    text = content_obj.get('text', '')
+
+                    article_context += f"文件 {idx}: {title}\n"
+                    article_context += f"   來源: {site}\n"
+                    article_context += f"   內容: {text[:500]}...\n"  # First 500 chars
+                    article_context += "\n"
+                article_context += "===\n\n"
+
             if has_cached_articles:
-                article_context = "\n===相關新聞文章（來自之前的搜尋）===\n"
+                article_context += "\n===相關新聞文章（來自之前的搜尋）===\n"
                 for idx, item in enumerate(self.final_ranked_answers[:8], 1):  # Top 8 articles for more context
                     title = item['name']
                     desc = item['ranking'].get('description', '')
@@ -553,12 +615,12 @@ class GenerateAnswer(NLWebHandler):
                 # No cached articles - provide general conversational response
                 prompt = f"""You are an AI assistant helping with questions about Taiwan news and current events.
 
-{conversation_context}當前問題: {self.query}
+{conversation_context}{article_context}當前問題: {self.query}
 
-由於沒有相關的新聞文章，請根據對話脈絡和一般知識提供有幫助的回答。
+請根據對話脈絡和提供的文件內容提供有幫助的回答。
 
 回答要求：
-1. 如果問題參考了之前的對話，請確認理解用戶的意圖
+1. 如果問題參考了之前的對話或提供的文件，請確認理解用戶的意圖
 2. 提供有建設性的回應或建議
 3. 如果需要更多資訊，可以建議用戶進行新的搜尋
 

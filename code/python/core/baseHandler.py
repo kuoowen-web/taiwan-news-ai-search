@@ -112,6 +112,14 @@ class NLWebHandler:
         # Free conversation mode - skip vector search and use conversation context only
         free_conversation = get_param(query_params, "free_conversation", str, "false")
         self.free_conversation = free_conversation not in ["False", "false", "0", None]
+
+        # Include private sources (user-uploaded files) in search
+        include_private_sources = get_param(query_params, "include_private_sources", str, "false")
+        self.include_private_sources = include_private_sources not in ["False", "false", "0", None]
+
+        # User ID for private sources (temporary until OAuth)
+        self.user_id = get_param(query_params, "user_id", str, None)
+
         # the items that have been retrieved from the vector database, could be before decontextualization.
         # See below notes on fasttrack
         self.retrieved_items = []
@@ -414,9 +422,47 @@ class NLWebHandler:
                 self.retrieval_done_event.set()
             # Skip retrieval for free conversation mode - use conversation context only
             elif self.free_conversation:
-                logger.info("[FREE_CONVERSATION] Skipping vector search - using conversation context only")
-                print("[FREE_CONVERSATION] Skipping vector search - using conversation context only")
-                self.final_retrieved_items = []
+                logger.info("[FREE_CONVERSATION] Skipping public vector search - using conversation context")
+                print("[FREE_CONVERSATION] Skipping public vector search - using conversation context")
+
+                # Check for private sources even in free conversation mode
+                logger.info(f"[FREE_CONVERSATION] include_private_sources={self.include_private_sources}, user_id={self.user_id}")
+                if self.include_private_sources and self.user_id:
+                    try:
+                        from core.user_data_retriever import search_user_documents, format_private_result_for_display
+
+                        logger.info("[FREE_CONVERSATION] Searching user's private documents")
+                        private_results = await search_user_documents(
+                            query=self.decontextualized_query,
+                            user_id=self.user_id,
+                            top_k=10,
+                            query_params=self.query_params
+                        )
+
+                        # Format private results to match expected format
+                        if private_results:
+                            formatted_private = []
+                            for result in private_results:
+                                formatted = format_private_result_for_display(result)
+                                import json
+                                private_item = [
+                                    formatted['url'],
+                                    json.dumps({'text': formatted['text'], 'metadata': formatted.get('metadata', {})}),
+                                    formatted['title'],
+                                    formatted['site']
+                                ]
+                                formatted_private.append(private_item)
+
+                            self.final_retrieved_items = formatted_private
+                            logger.info(f"[FREE_CONVERSATION] Found {len(formatted_private)} private documents")
+                        else:
+                            self.final_retrieved_items = []
+                    except Exception as e:
+                        logger.exception(f"[FREE_CONVERSATION] Failed to retrieve private documents: {str(e)}")
+                        self.final_retrieved_items = []
+                else:
+                    self.final_retrieved_items = []
+
                 self.retrieval_done_event.set()
             else:
                 # Get parsed time range (TimeRangeExtractor runs in parallel during prepare())
@@ -450,6 +496,42 @@ class NLWebHandler:
                     num_results=num_to_retrieve,
                     include_vectors=include_vectors
                 )
+
+                # Query user's private files if requested
+                if self.include_private_sources and self.user_id:
+                    try:
+                        from core.user_data_retriever import search_user_documents, format_private_result_for_display
+
+                        # Search private documents
+                        private_results = await search_user_documents(
+                            query=self.decontextualized_query,
+                            user_id=self.user_id,
+                            top_k=10,  # Retrieve top 10 from private files
+                            query_params=self.query_params
+                        )
+
+                        # Format private results to match public results format
+                        if private_results:
+                            formatted_private = []
+                            for result in private_results:
+                                # Convert to tuple format [url, json_str, name, site]
+                                formatted = format_private_result_for_display(result)
+                                import json
+                                private_item = [
+                                    formatted['url'],
+                                    json.dumps({'text': formatted['text'], 'metadata': formatted.get('metadata', {})}),
+                                    formatted['title'],
+                                    formatted['site']
+                                ]
+                                formatted_private.append(private_item)
+
+                            # Prepend private results (higher priority)
+                            items = formatted_private + items
+                            logger.info(f"Added {len(formatted_private)} private document results to search")
+
+                    except Exception as e:
+                        logger.exception(f"Failed to retrieve private documents: {str(e)}")
+                        # Continue with public results only
 
                 # DIAGNOSTIC: Check items immediately after search
                 if items:

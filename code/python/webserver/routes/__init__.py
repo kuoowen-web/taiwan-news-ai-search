@@ -8,6 +8,7 @@ from .a2a import setup_a2a_routes
 from .conversation import setup_conversation_routes
 from .chat import setup_chat_routes
 from .oauth import setup_oauth_routes
+from .user_data import setup_user_data_routes
 
 # Analytics routes (from parent webserver directory)
 import sys
@@ -26,6 +27,7 @@ def setup_routes(app):
     setup_conversation_routes(app)
     setup_chat_routes(app)
     setup_oauth_routes(app)
+    setup_user_data_routes(app)
 
     # Register analytics routes with correct database path
     # Use environment variable if available (for Render persistent disk), otherwise use default
