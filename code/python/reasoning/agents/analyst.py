@@ -2,7 +2,7 @@
 Analyst Agent - Research and draft generation for the Actor-Critic system.
 """
 
-from typing import Dict, Any, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 from reasoning.agents.base import BaseReasoningAgent
 from reasoning.schemas import AnalystResearchOutput, CriticReviewOutput
 from reasoning.prompts.analyst import AnalystPromptBuilder
@@ -145,6 +145,33 @@ class AnalystAgent(BaseReasoningAgent):
 
         return result
 
+    def _validate_evidence_references(
+        self,
+        items: List[Any],
+        valid_citation_ids: Set[int],
+        name_getter: Callable[[Any], str],
+    ) -> None:
+        """
+        Generic validation for evidence ID references.
+
+        Validates that all evidence_ids in items reference valid citations,
+        logs warnings for invalid references, and removes them.
+
+        Args:
+            items: List of items to validate (nodes, entities, relationships)
+            valid_citation_ids: Set of valid citation IDs
+            name_getter: Function to extract item name for logging
+        """
+        for item in items:
+            evidence_ids = getattr(item, 'evidence_ids', [])
+            if not evidence_ids:
+                continue
+
+            invalid_ids = [eid for eid in evidence_ids if eid not in valid_citation_ids]
+            if invalid_ids:
+                self.logger.warning(f"{name_getter(item)} has invalid evidence_ids: {invalid_ids}")
+                item.evidence_ids = [eid for eid in evidence_ids if eid in valid_citation_ids]
+
     def _validate_argument_graph(self, graph: List, valid_citations: List[int]) -> None:
         """
         Ensure argument graph cites only available sources (Phase 2).
@@ -152,17 +179,12 @@ class AnalystAgent(BaseReasoningAgent):
         Args:
             graph: List of ArgumentNode objects
             valid_citations: List of valid citation IDs from analyst
-
-        Side effects:
-            - Logs warnings for invalid evidence_ids
-            - Removes invalid citations from nodes (in-place modification)
         """
-        for node in graph:
-            invalid = [eid for eid in node.evidence_ids if eid not in valid_citations]
-            if invalid:
-                self.logger.warning(f"Node {node.node_id[:8]} has invalid evidence_ids: {invalid}")
-                # Remove invalid citations
-                node.evidence_ids = [eid for eid in node.evidence_ids if eid in valid_citations]
+        self._validate_evidence_references(
+            items=graph,
+            valid_citation_ids=set(valid_citations),
+            name_getter=lambda node: f"Node {node.node_id[:8]}",
+        )
 
     def _validate_knowledge_graph(self, kg: 'KnowledgeGraph', valid_citations: List[int]) -> None:
         """
@@ -171,23 +193,17 @@ class AnalystAgent(BaseReasoningAgent):
         Args:
             kg: KnowledgeGraph object with entities and relationships
             valid_citations: List of valid citation IDs from analyst
-
-        Side effects:
-            - Logs warnings for invalid evidence_ids
-            - Removes invalid citations from entities/relationships (in-place modification)
         """
-        # Validate entities
-        for entity in kg.entities:
-            invalid = [eid for eid in entity.evidence_ids if eid not in valid_citations]
-            if invalid:
-                self.logger.warning(f"Entity '{entity.name}' has invalid evidence_ids: {invalid}")
-                # Remove invalid citations
-                entity.evidence_ids = [eid for eid in entity.evidence_ids if eid in valid_citations]
+        valid_citation_set = set(valid_citations)
 
-        # Validate relationships
-        for rel in kg.relationships:
-            invalid = [eid for eid in rel.evidence_ids if eid not in valid_citations]
-            if invalid:
-                self.logger.warning(f"Relationship {rel.relationship_id[:8]} has invalid evidence_ids: {invalid}")
-                # Remove invalid citations
-                rel.evidence_ids = [eid for eid in rel.evidence_ids if eid in valid_citations]
+        self._validate_evidence_references(
+            items=kg.entities,
+            valid_citation_ids=valid_citation_set,
+            name_getter=lambda e: f"Entity '{e.name}'",
+        )
+
+        self._validate_evidence_references(
+            items=kg.relationships,
+            valid_citation_ids=valid_citation_set,
+            name_getter=lambda r: f"Relationship {r.relationship_id[:8]}",
+        )
