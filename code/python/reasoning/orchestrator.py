@@ -5,8 +5,10 @@ Deep Research Orchestrator - Coordinates the Actor-Critic reasoning loop.
 import asyncio
 import json
 import time
+from datetime import datetime
 from typing import Dict, Any, List, Optional
 from misc.logger.logging_config_helper import get_configured_logger
+from core.retriever import search as retriever_search
 from core.config import CONFIG
 from reasoning.agents.analyst import AnalystAgent
 from reasoning.agents.critic import CriticAgent
@@ -165,7 +167,6 @@ class DeepResearchOrchestrator:
                 # Legacy tuple format: (url, schema_json, name, site, [vector])
                 title = item[2] if len(item) > 2 else "No title"
                 # Extract description from schema_json
-                import json
                 try:
                     schema_json = item[1] if len(item) > 1 else "{}"
                     schema_obj = json.loads(schema_json) if isinstance(schema_json, str) else schema_json
@@ -230,133 +231,6 @@ class DeepResearchOrchestrator:
         except Exception as e:
             # Progress messages are non-critical - log but don't crash
             self.logger.warning(f"Progress message send failed (non-critical): {e}")
-
-
-    def _setup_research_session(
-        self,
-        query_id: str,
-        query: str,
-        mode: str,
-        items: List[Dict[str, Any]],
-        enable_web_search: bool = False,
-    ):
-        """
-        Initialize logging and tracing for research session.
-
-        Returns:
-            Tuple of (iteration_logger, tracer)
-        """
-        # Initialize iteration logger
-        iteration_logger = IterationLogger(query_id)
-
-        # Initialize console tracer
-        tracer = None
-        tracing_config = CONFIG.reasoning_params.get("tracing", {})
-        if tracing_config.get("console", {}).get("enabled", True):
-            import os
-            verbosity = os.getenv("REASONING_TRACE_LEVEL") or \
-                        tracing_config.get("console", {}).get("level", "DEBUG")
-            from reasoning.utils.console_tracer import ConsoleTracer
-            tracer = ConsoleTracer(query_id=query_id, verbosity=verbosity)
-
-        self.logger.info(
-            f"Starting deep research: query='{query}', mode={mode}, "
-            f"items={len(items)}, enable_web_search={enable_web_search}"
-        )
-
-        # Tracing: Research start
-        if tracer:
-            tracer.start_research(query=query, mode=mode, items=items)
-
-        return iteration_logger, tracer
-
-    async def _filter_and_prepare_sources(
-        self,
-        items: List[Dict[str, Any]],
-        mode: str,
-        tracer,
-    ) -> List[Dict[str, Any]]:
-        """
-        Apply source tier filtering based on research mode.
-
-        Returns:
-            Filtered items list
-
-        Raises:
-            ValueError: If no sources remain after filtering
-        """
-        # Phase 1: Filter and enrich context by source tier
-        current_context = self.source_filter.filter_and_enrich(items, mode)
-        self.logger.info(f"Filtered context: {len(current_context)} sources (from {len(items)})")
-
-        # Tracing: Source filtering
-        if tracer:
-            tracer.source_filtering(
-                original_items=items,
-                filtered_items=current_context,
-                mode=mode
-            )
-
-        # Check if we have any sources to work with
-        if not current_context or len(current_context) == 0:
-            self.logger.error(f"No sources available for research! Original items: {len(items)}")
-            raise ValueError(
-                f"No sources available after filtering. "
-                f"Original: {len(items)}, Filtered: 0, Mode: {mode}"
-            )
-
-        return current_context
-
-    async def _format_research_context(
-        self,
-        items: List[Dict[str, Any]],
-        tracer,
-    ) -> tuple[str, Dict[int, Dict[str, Any]]]:
-        """
-        Format items into citation context.
-
-        Returns:
-            Tuple of (formatted_context_string, source_id_map)
-        """
-        # Unified context formatting (Single Source of Truth)
-        formatted_context, source_map = self._format_context_shared(items)
-
-        # Tracing: Context formatted
-        if tracer:
-            tracer.context_formatted(
-                source_map=source_map,
-                formatted_context=formatted_context
-            )
-
-        return formatted_context, source_map
-
-    def _create_no_sources_error_response(
-        self,
-        items_count: int,
-        filtered_count: int,
-        mode: str,
-    ) -> List[Dict[str, Any]]:
-        """Create error response for no sources case."""
-        return [{
-            "@type": "Item",
-            "url": "internal://error",
-            "name": "Deep Research 無法執行",
-            "site": "系統訊息",
-            "siteUrl": "internal",
-            "score": 0,
-            "description": (
-                f"**錯誤：無法執行 Deep Research**\n\n"
-                f"原因：檢索階段未找到任何相關資料來源。\n\n"
-                f"- 檢索到的項目數：{items_count}\n"
-                f"- 經過濾後的項目數：{filtered_count}\n"
-                f"- 研究模式：{mode}\n\n"
-                f"請嘗試：\n"
-                f"1. 使用不同的關鍵詞重新搜尋\n"
-                f"2. 擴大搜尋範圍（使用 'site=all'）\n"
-                f"3. 確認資料庫中有相關內容"
-            )
-        }]
-
 
 
     def _setup_research_session(
@@ -666,13 +540,12 @@ class DeepResearchOrchestrator:
                     })
 
                     # Execute secondary search for each new query
-                    from core.retriever import search
                     secondary_results = []
 
                     for new_query in response.new_queries:
                         try:
                             # Call retriever with same parameters as original search
-                            results = await search(
+                            results = await retriever_search(
                                 query=new_query,
                                 site=self.handler.site,
                                 num_results=20,  # Smaller batch for gap search
@@ -1208,7 +1081,6 @@ class DeepResearchOrchestrator:
         # Serialize knowledge graph if present (Phase KG)
         kg_json = None
         if analyst_output and hasattr(analyst_output, 'knowledge_graph') and analyst_output.knowledge_graph:
-            from datetime import datetime
             kg = analyst_output.knowledge_graph
             kg_json = {
                 "entities": [e.model_dump() for e in kg.entities],

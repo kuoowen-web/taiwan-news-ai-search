@@ -536,10 +536,7 @@ class AppConfig:
         
         # Load who_endpoint from config
         who_endpoint = self._get_config_value(data.get("who_endpoint"), "http://localhost:8000/who")
-        
-        # Load headers from config
-        headers = data.get("headers", {})
-        
+
         # Load API keys from config
         api_keys = {}
         if "api_keys" in data:
@@ -592,7 +589,8 @@ class AppConfig:
                 "as a hyperlink using its URL."
             )
         }
-    
+        return default_instructions.get(instruction_type, "")
+
     def get_headers(self) -> Dict[str, str]:
         """Get the configured headers to include in responses."""
         if hasattr(self, 'nlweb') and self.nlweb.headers:
