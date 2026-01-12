@@ -47,7 +47,11 @@ class DeepResearchHandler(NLWebHandler):
         # Phase KG: Extract enable_kg parameter from query_params, fallback to config
         from core.config import CONFIG
         config_enable_kg = CONFIG.reasoning_params.get("features", {}).get("knowledge_graph_generation", False)
-        self.enable_kg = query_params.get('enable_kg', config_enable_kg)
+        enable_kg_param = query_params.get('enable_kg', None)
+        if enable_kg_param is not None:
+            self.enable_kg = enable_kg_param in [True, 'true', 'True', '1']
+        else:
+            self.enable_kg = config_enable_kg
 
         # Stage 5: Extract enable_web_search parameter (default: False)
         enable_web_search_param = query_params.get('enable_web_search', 'false')
