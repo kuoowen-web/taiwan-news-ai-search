@@ -64,7 +64,7 @@ endpoints:
     api_endpoint_env: OPENAI_ENDPOINT
     llm_type: openai
     models:
-      high: gpt-4.1-mini
+      high: gpt-5.1
       low: gpt-4o-mini
 
   snowflake:

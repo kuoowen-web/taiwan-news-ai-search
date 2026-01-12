@@ -233,6 +233,8 @@ class EntityType(str, Enum):
     TECHNOLOGY = "technology"
     CONCEPT = "concept"
     PRODUCT = "product"
+    FACILITY = "facility"  # 設施、廠房、基礎設施
+    SERVICE = "service"    # 服務、業務
 
 
 class RelationType(str, Enum):

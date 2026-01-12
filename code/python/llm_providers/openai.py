@@ -64,6 +64,16 @@ class OpenAIProvider(LLMProvider):
         """
         Construct the system and user message sequence enforcing a JSON schema.
         """
+        # When schema is empty, don't add schema constraints (let prompt define structure)
+        if not schema:
+            return [
+                {
+                    "role": "system",
+                    "content": "You are an AI that only responds with valid JSON."
+                },
+                {"role": "user", "content": prompt}
+            ]
+
         # Create a more explicit system message with the exact field names
         schema_fields = ", ".join([f'"{k}"' for k in schema.keys()])
         return [
@@ -102,11 +112,11 @@ class OpenAIProvider(LLMProvider):
         model: Optional[str] = None,
         temperature: float = 0.1,
         max_completion_tokens: int = 2048,
-        timeout: float = 60.0,
+        timeout: float = 120.0,  # Doubled: 60 -> 120 for GPT-5.1
         **kwargs
     ) -> Dict[str, Any]:
         """
-        Send an async chat completion request and return parsed JSON output.
+        Send an async completion request using Responses API and return parsed JSON output.
         """
         if model is None:
             provider_config = CONFIG.llm_endpoints["openai"]
@@ -116,14 +126,14 @@ class OpenAIProvider(LLMProvider):
         messages = self._build_messages(prompt, schema)
 
         try:
-            # Use JSON mode to enforce structured output
+            # Use Responses API for gpt-5.1 and newer models
             response = await asyncio.wait_for(
-                client.chat.completions.create(
+                client.responses.create(
                     model=model,
-                    messages=messages,
+                    input=messages,
                     temperature=temperature,
-                    max_completion_tokens=max_completion_tokens,
-                    response_format={"type": "json_object"},
+                    max_output_tokens=max_completion_tokens,
+                    text={"format": {"type": "json_object"}},
                     **kwargs
                 ),
                 timeout
@@ -135,17 +145,19 @@ class OpenAIProvider(LLMProvider):
             logger.error("Error calling OpenAI API: %s", e)
             return {}
 
-        # Try parsing the response multiple ways
-        content = getattr(response.choices[0].message, "content", "")
-        result = self.clean_response(content)
-        if not result:
-            # As a last resort, try full content directly
-            try:
-                result = json.loads(content)
-            except Exception:
-                logger.error("Failed to parse OpenAI response as JSON: %r", content)
+        # Responses API returns output_text directly
+        content = getattr(response, "output_text", "") or ""
+
+        # With json_object format, response should be valid JSON directly
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            # Fallback to clean_response for edge cases
+            result = self.clean_response(content)
+            if not result:
+                logger.error("Failed to parse OpenAI response as JSON: %r", content[:500])
                 return {}
-        return result
+            return result
 
 
 # Create a singleton instance

@@ -14,7 +14,7 @@ class ClarificationAgent(BaseReasoningAgent):
     clarification flow is ready to handle user interactions.
     """
 
-    def __init__(self, handler: Any, timeout: int = 30):
+    def __init__(self, handler: Any, timeout: int = 60):  # Doubled: 30 -> 60 for GPT-5.1
         """
         Initialize Clarification Agent.
 

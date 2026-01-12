@@ -552,11 +552,39 @@ Web Search 狀態：**已啟用**
 
 ## 階段 2.7：知識圖譜生成（Entity-Relationship Graph - Phase KG）
 
+⚠️ **MANDATORY（強制要求）**：當此指令出現時，表示用戶已勾選「知識圖譜」選項。你**必須**生成 `knowledge_graph` 欄位，**絕對不能**設為 `null` 或省略。
+
+### 強制生成規則
+
+1. **必須生成**：只要看到這段指令，就表示 KG 功能已啟用，你**必須**提供 `knowledge_graph`
+2. **最少 1 個實體**：即使查詢非常簡單，也至少要提取 1 個核心實體
+3. **允許只有 nodes 沒有 edges**：如果實體之間沒有明確關係，`relationships` 可以是空陣列 `[]`，但 `entities` 不能為空
+4. **禁止設為 null**：不要將 `knowledge_graph` 設為 `null`，這會導致前端無法顯示
+
+**最低要求範例**（無關係時）：
+```json
+{
+  "knowledge_graph": {
+    "entities": [
+      {
+        "entity_id": "ent-001",
+        "name": "查詢主題",
+        "entity_type": "concept",
+        "description": "用戶查詢的核心主題",
+        "evidence_ids": [1],
+        "confidence": "medium"
+      }
+    ],
+    "relationships": []
+  }
+}
+```
+
 除了原有欄位外，新增 `knowledge_graph` 欄位：
 
 ### 實體提取規則
 
-1. **識別核心實體**（可用類型）：
+1. **識別核心實體**（⚠️ **只能使用以下 10 種類型，不得自創**）：
    - **組織 (organization)**：台積電、Nvidia、政府機構
    - **人物 (person)**：張忠謀、執行長、專家
    - **事件 (event)**：高雄廠動土、技術發表會、政策公告
@@ -564,7 +592,11 @@ Web Search 狀態：**已啟用**
    - **數據指標 (metric)**：2025年產能、股價、市占率
    - **技術 (technology)**：生成式AI、區塊鏈、智慧物流系統
    - **概念 (concept)**：生態圈、綠色物流、數位轉型
-   - **產品 (product)**：iPhone、Mo幣、RMN服務
+   - **產品 (product)**：iPhone、Mo幣、硬體產品
+   - **設施 (facility)**：工廠、廠房、數據中心、倉庫、基礎設施
+   - **服務 (service)**：RMN服務、物流服務、雲端服務、訂閱服務
+
+   ⚠️ **CRITICAL**: `entity_type` 必須是以上 10 種之一：`person`, `organization`, `event`, `location`, `metric`, `technology`, `concept`, `product`, `facility`, `service`。使用其他值會導致系統錯誤。
 
 2. **證據要求**：每個實體必須有 `evidence_ids`（來自 citations_used）
 
@@ -670,14 +702,14 @@ Web Search 狀態：**已啟用**
 
 - **最多 15 個實體、20 個關係**（保持可管理性）
 - **簡單查詢可提取 2-3 個實體**（如「台積電股價」僅需提取台積電、股價兩個實體）
-- **資料不適合圖譜化時，設為 `null`**（如純粹的意見問答）
 - **⚠️ CRITICAL: relationships 必須使用 entity_id (UUID)**
   - ❌ 錯誤：`"source_entity_id": "台積電"` （實體名稱）
   - ✅ 正確：`"source_entity_id": "ent-abc-123"` （entity_id/UUID）
   - 系統會先為每個 entity 自動生成 `entity_id`，你在定義 relationships 時必須引用這些 UUID
 - **避免過度細分**（如「張忠謀的辦公室」不需要成為獨立實體）
+- **沒有明確關係時**：`relationships` 設為空陣列 `[]`，但 `entities` 必須至少有 1 個
 
-**重要**：知識圖譜是可選的。如果資料不足或查詢不適合圖譜化，可以將 `knowledge_graph` 設為 `null`。系統會正常運作。
+**⚠️ 再次強調**：當此指令出現時，`knowledge_graph` 是**強制必填**，不是可選的。至少提取查詢中的核心實體。
 """
 
     def _build_gap_enrichment_instructions(self, enable_web_search: bool) -> str:

@@ -23,7 +23,7 @@ class BaseReasoningAgent:
         self,
         handler: Any,
         agent_name: str,
-        timeout: int = 60,
+        timeout: int = 120,  # Doubled: 60 -> 120 for GPT-5.1
         max_retries: int = 3
     ):
         """
@@ -79,8 +79,9 @@ class BaseReasoningAgent:
                 response = await asyncio.wait_for(
                     ask_llm(
                         filled_prompt,
-                        handler=self.handler,
-                        level=level
+                        schema={},
+                        level=level,
+                        query_params=getattr(self.handler, 'query_params', {})
                     ),
                     timeout=self.timeout
                 )
@@ -151,8 +152,9 @@ class BaseReasoningAgent:
                         prompt,
                         schema={},  # Schema enforcement via Pydantic post-validation
                         level=level,
+                        timeout=self.timeout,  # Pass timeout to inner call
                         query_params=getattr(self.handler, 'query_params', {}),
-                        max_length=4096  # Increase for research outputs
+                        max_length=16384  # Large buffer for research outputs
                     ),
                     timeout=self.timeout
                 )

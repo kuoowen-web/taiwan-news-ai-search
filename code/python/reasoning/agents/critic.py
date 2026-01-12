@@ -16,7 +16,7 @@ class CriticAgent(BaseReasoningAgent):
     and mode-specific requirements (strict/discovery/monitor).
     """
 
-    def __init__(self, handler, timeout: int = 30):
+    def __init__(self, handler, timeout: int = 60):  # Doubled: 30 -> 60 for GPT-5.1
         """
         Initialize Critic Agent.
 

@@ -390,9 +390,9 @@ class AppConfig:
         self.reasoning_params: Dict[str, Any] = data.get("reasoning", {
             "enabled": False,
             "max_iterations": 3,
-            "analyst_timeout": 60,
-            "critic_timeout": 30,
-            "writer_timeout": 45
+            "analyst_timeout": 120,   # Doubled: 60 -> 120 for GPT-5.1
+            "critic_timeout": 60,     # Doubled: 30 -> 60 for GPT-5.1
+            "writer_timeout": 90      # Doubled: 45 -> 90 for GPT-5.1
         })
 
         # Load source tier knowledge base
