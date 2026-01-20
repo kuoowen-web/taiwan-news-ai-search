@@ -97,11 +97,14 @@ class WriterAgent(BaseReasoningAgent):
 - 章節數量：3-5 章
 """
 
-        result = await self.call_llm_validated(
+        result, retry_count, fallback_used = await self.call_llm_validated(
             prompt=prompt,
             response_schema=WriterPlanOutput,
             level="high"  # Use high quality for planning
         )
+
+        # Log TypeAgent metrics for analytics
+        self.logger.debug(f"TypeAgent metrics (plan): retries={retry_count}, fallback={fallback_used}")
 
         self.logger.info(f"Plan generated: {len(result.key_arguments)} key arguments, est. {result.estimated_length} words")
         return result
@@ -171,7 +174,6 @@ class WriterAgent(BaseReasoningAgent):
 - 不要截斷 JSON - 確保結構完整
 - 如果 final_report 內容過長，優先縮短報告長度，但保持 JSON 結構完整
 """
-            max_length = 8192  # Double token limit for long-form
         else:
             # Standard mode (existing prompt)
             compose_prompt = self.prompt_builder.build_compose_prompt(
@@ -182,14 +184,16 @@ class WriterAgent(BaseReasoningAgent):
                 user_query=user_query,
                 suggested_confidence=suggested_confidence
             )
-            max_length = 4096
 
-        # Call LLM with validation (use max_length parameter)
-        result = await self.call_llm_validated(
+        # Call LLM with validation
+        result, retry_count, fallback_used = await self.call_llm_validated(
             prompt=compose_prompt,
             response_schema=WriterComposeOutput,
             level="high"
         )
+
+        # Log TypeAgent metrics for analytics
+        self.logger.debug(f"TypeAgent metrics (compose): retries={retry_count}, fallback={fallback_used}")
 
         return result
 

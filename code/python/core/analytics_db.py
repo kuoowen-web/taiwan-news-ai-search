@@ -279,29 +279,17 @@ class AnalyticsDB:
         }
 
     def get_index_sql(self) -> List[str]:
-        """Get SQL statements for creating indexes."""
-        if self.db_type == 'postgres':
-            return [
-                "CREATE INDEX IF NOT EXISTS idx_queries_timestamp ON queries(timestamp)",
-                "CREATE INDEX IF NOT EXISTS idx_queries_user_id ON queries(user_id)",
-                "CREATE INDEX IF NOT EXISTS idx_queries_mode ON queries(mode)",
-                "CREATE INDEX IF NOT EXISTS idx_retrieved_documents_query_id ON retrieved_documents(query_id)",
-                "CREATE INDEX IF NOT EXISTS idx_ranking_scores_query_id ON ranking_scores(query_id)",
-                "CREATE INDEX IF NOT EXISTS idx_user_interactions_query_id ON user_interactions(query_id)",
-                "CREATE INDEX IF NOT EXISTS idx_tier_6_query ON tier_6_enrichment(query_id)",
-                "CREATE INDEX IF NOT EXISTS idx_tier_6_source_type ON tier_6_enrichment(source_type)"
-            ]
-        else:
-            return [
-                "CREATE INDEX IF NOT EXISTS idx_queries_timestamp ON queries(timestamp)",
-                "CREATE INDEX IF NOT EXISTS idx_queries_user_id ON queries(user_id)",
-                "CREATE INDEX IF NOT EXISTS idx_queries_mode ON queries(mode)",
-                "CREATE INDEX IF NOT EXISTS idx_retrieved_documents_query_id ON retrieved_documents(query_id)",
-                "CREATE INDEX IF NOT EXISTS idx_ranking_scores_query_id ON ranking_scores(query_id)",
-                "CREATE INDEX IF NOT EXISTS idx_user_interactions_query_id ON user_interactions(query_id)",
-                "CREATE INDEX IF NOT EXISTS idx_tier_6_query ON tier_6_enrichment(query_id)",
-                "CREATE INDEX IF NOT EXISTS idx_tier_6_source_type ON tier_6_enrichment(source_type)"
-            ]
+        """Get SQL statements for creating indexes. Same syntax for SQLite and PostgreSQL."""
+        return [
+            "CREATE INDEX IF NOT EXISTS idx_queries_timestamp ON queries(timestamp)",
+            "CREATE INDEX IF NOT EXISTS idx_queries_user_id ON queries(user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_queries_mode ON queries(mode)",
+            "CREATE INDEX IF NOT EXISTS idx_retrieved_documents_query_id ON retrieved_documents(query_id)",
+            "CREATE INDEX IF NOT EXISTS idx_ranking_scores_query_id ON ranking_scores(query_id)",
+            "CREATE INDEX IF NOT EXISTS idx_user_interactions_query_id ON user_interactions(query_id)",
+            "CREATE INDEX IF NOT EXISTS idx_tier_6_query ON tier_6_enrichment(query_id)",
+            "CREATE INDEX IF NOT EXISTS idx_tier_6_source_type ON tier_6_enrichment(source_type)"
+        ]
 
     def adapt_query(self, query: str) -> str:
         """

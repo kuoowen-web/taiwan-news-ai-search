@@ -36,29 +36,51 @@ class TimeRangeExtractor:
 
     # Regex patterns for common temporal expressions (bilingual)
     REGEX_PATTERNS = {
-        # Chinese - Relative time
+        # Chinese - Relative time (days)
         'past_x_days_zh': r'過去\s*(\d+)\s*天',
-        'past_x_weeks_zh': r'過去\s*(\d+)\s*(?:週|周|星期)',
-        'past_x_months_zh': r'過去\s*(\d+)\s*(?:個月|月)',
         'last_x_days_zh': r'最近\s*(\d+)\s*天',
-        'last_x_weeks_zh': r'最近\s*(\d+)\s*(?:週|周|星期)',
         'yesterday_zh': r'昨天',
-        'this_week_zh': r'(?:本週|這週|本周|這周)',
-        'this_month_zh': r'(?:本月|這個月)',
         'today_zh': r'今天',
 
-        # English - Relative time
+        # Chinese - Relative time (weeks)
+        'past_x_weeks_zh': r'過去\s*(\d+)\s*(?:週|周|星期)',
+        'last_x_weeks_zh': r'最近\s*(\d+)\s*(?:週|周|星期)',
+        'this_week_zh': r'(?:本週|這週|本周|這周)',
+
+        # Chinese - Relative time (months)
+        'past_x_months_zh': r'過去\s*(\d+)\s*(?:個月|月)',
+        'last_x_months_zh': r'(?:近|最近)\s*(\d+)\s*(?:個月|月)',
+        'this_month_zh': r'(?:本月|這個月)',
+
+        # Chinese - Relative time (years) - NEW
+        'past_x_years_zh': r'過去\s*(\d+)\s*年',
+        'last_x_years_zh': r'(?:近|最近)\s*(\d+)\s*年',
+        'this_year_zh': r'(?:今年|本年)',
+        'last_year_zh': r'去年',
+
+        # English - Relative time (days)
         'past_x_days_en': r'past\s+(\d+)\s+days?',
-        'past_x_weeks_en': r'past\s+(\d+)\s+weeks?',
-        'past_x_months_en': r'past\s+(\d+)\s+months?',
         'last_x_days_en': r'last\s+(\d+)\s+days?',
+        'yesterday_en': r'yesterday',
+        'today_en': r'today',
+
+        # English - Relative time (weeks)
+        'past_x_weeks_en': r'past\s+(\d+)\s+weeks?',
         'last_x_weeks_en': r'last\s+(\d+)\s+weeks?',
         'last_week_en': r'last\s+week',
-        'last_month_en': r'last\s+month',
-        'yesterday_en': r'yesterday',
         'this_week_en': r'this\s+week',
+
+        # English - Relative time (months)
+        'past_x_months_en': r'past\s+(\d+)\s+months?',
+        'last_x_months_en': r'last\s+(\d+)\s+months?',
+        'last_month_en': r'last\s+month',
         'this_month_en': r'this\s+month',
-        'today_en': r'today',
+
+        # English - Relative time (years) - NEW
+        'past_x_years_en': r'past\s+(\d+)\s+years?',
+        'last_x_years_en': r'last\s+(\d+)\s+years?',
+        'last_year_en': r'last\s+year',
+        'this_year_en': r'this\s+year',
 
         # Absolute dates
         'iso_date': r'\d{4}-\d{2}-\d{2}',
@@ -97,17 +119,22 @@ class TimeRangeExtractor:
             from core.utils.utils import get_param
             time_range_start = get_param(self.handler.query_params, "time_range_start", str, None)
             time_range_end = get_param(self.handler.query_params, "time_range_end", str, None)
+            user_selected_time = get_param(self.handler.query_params, "user_selected_time", str, None)
+            user_time_label = get_param(self.handler.query_params, "user_time_label", str, None)
 
             if time_range_start and time_range_end:
-                # Explicit time range provided by frontend
+                # Explicit time range provided by frontend (from clarification)
                 result = {
                     'method': 'explicit_params',
                     'is_temporal': True,
                     'start_date': time_range_start,
                     'end_date': time_range_end,
-                    'confidence': 1.0
+                    'confidence': 1.0,
+                    # NEW: Mark as user-selected for BINDING constraint in Analyst prompt
+                    'user_selected': user_selected_time in ['true', 'True', '1', True],
+                    'user_choice_label': user_time_label or ''
                 }
-                logger.info(f"[TIME-EXTRACTOR] Explicit params: {result}")
+                logger.info(f"[TIME-EXTRACTOR] Explicit params (user_selected={result['user_selected']}): {result}")
                 self.handler.temporal_range = result
                 await self.handler.state.precheck_step_done(self.STEP_NAME)
                 return result
@@ -178,12 +205,36 @@ class TimeRangeExtractor:
                         return self._build_result('regex', True, start_date, today, days,
                                                  match.group(0), confidence=1.0)
 
-                    elif 'past_x_months' in pattern_name:
+                    elif 'past_x_months' in pattern_name or 'last_x_months' in pattern_name:
                         months = int(match.group(1))
                         days = months * 30  # Approximate
                         start_date = today - timedelta(days=days)
                         return self._build_result('regex', True, start_date, today, days,
                                                  match.group(0), confidence=0.9)
+
+                    elif 'past_x_years' in pattern_name or 'last_x_years' in pattern_name:
+                        # Handle "近兩年", "過去3年", "last 2 years" etc.
+                        years = int(match.group(1))
+                        days = years * 365  # Approximate (ignoring leap years)
+                        start_date = today - timedelta(days=days)
+                        return self._build_result('regex', True, start_date, today, days,
+                                                 match.group(0), confidence=0.95)
+
+                    elif 'this_year' in pattern_name:
+                        # From Jan 1 of current year to today
+                        start_date = today.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+                        days = (today - start_date).days + 1
+                        return self._build_result('regex', True, start_date, today, days,
+                                                 match.group(0), confidence=0.95)
+
+                    elif 'last_year' in pattern_name:
+                        # Full previous year
+                        last_year = today.year - 1
+                        start_date = today.replace(year=last_year, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+                        end_date = today.replace(year=last_year, month=12, day=31, hour=23, minute=59, second=59, microsecond=0)
+                        days = 365
+                        return self._build_result('regex', True, start_date, end_date, days,
+                                                 match.group(0), confidence=0.95)
 
                     elif 'yesterday' in pattern_name:
                         start_date = today - timedelta(days=1)

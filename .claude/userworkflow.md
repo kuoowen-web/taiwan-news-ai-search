@@ -1,278 +1,181 @@
-# NLWeb User Workflows and UX Flow
+# 使用者流程與 UX
 
-## Primary User Paths
+## 主要使用路徑
 
-### 1. First-Time User Flow
+### 1. 首次使用者
 ```
-Landing Page → Centered Input → Type Query → View Results → Explore
-```
-
-**Steps:**
-1. User lands on index.html
-2. Sees centered input with placeholder "Ask"
-3. Optional: Select site from dropdown (defaults to "all")
-4. Optional: Select mode (list/summarize/generate)
-5. Types natural language query
-6. Presses Enter or clicks send button
-7. Views streaming results
-8. Can continue conversation or start new
-
-**UI Elements:**
-- Centered input box with site/mode selectors
-- Loading animation (three dots)
-- Results stream in real-time
-- Sidebar hidden initially on mobile
-
-### 2. Authenticated User Flow
-```
-Login → OAuth Provider → Return → Conversations Sync → Enhanced Experience
+首頁 → 置中輸入框 → 輸入查詢 → 查看結果 → 探索
 ```
 
-**Steps:**
-1. Click "Login" button in header
-2. Select OAuth provider (Google/Facebook/Microsoft/GitHub)
-3. Authenticate with provider
-4. Return to app with token
-5. Previous conversations load in sidebar
-6. User info displayed in header
-7. Conversations auto-save to server
+**步驟**：
+1. 使用者進入首頁
+2. 看到置中輸入框（placeholder: "Ask"）
+3. 選擇網站（可選，預設 "all"）
+4. 選擇模式（list/summarize/generate）
+5. 輸入自然語言查詢
+6. 按 Enter 或點擊發送
+7. 即時查看串流結果
+8. 繼續對話或開始新查詢
 
-**UI Elements:**
-- Login button → User menu (when authenticated)
-- OAuth popup window
-- Provider selection interface
-- Loading state during sync
-- Conversation list in sidebar
-
-### 3. Search and Browse Flow
-
-#### List Mode (Default)
+### 2. 已認證使用者
 ```
-Query → Results List → Click Item → New Tab with Source
-```
-- Results ranked by relevance
-- Rich snippets with descriptions
-- Schema.org data rendered appropriately
-- External links open in new tabs
-
-#### Summarize Mode
-```
-Query → Summary Text → Supporting Results → Explore Sources
-```
-- AI-generated summary appears first
-- Relevant results listed below
-- Summary based on retrieved content
-- Citations link to sources
-
-#### Generate Mode
-```
-Query → AI Response → Referenced Items → Deep Exploration
-```
-- Comprehensive AI-generated answer
-- Items used for generation listed
-- More conversational response
-- Supports follow-up questions
-
-### 4. Multi-Turn Conversation Flow
-```
-Initial Query → Response → Follow-up Query → Contextual Response
+登入 → OAuth → 返回 → 對話同步 → 增強體驗
 ```
 
-**Features:**
-- Previous queries provide context
-- Pronouns resolved (e.g., "it", "that")
-- Conversation history in sidebar
-- Can switch between conversations
-- Delete unwanted conversations
+**步驟**：
+1. 點擊「登入」按鈕
+2. 選擇 OAuth 提供者（Google/Facebook/Microsoft/GitHub）
+3. 完成認證
+4. 返回應用程式
+5. 先前對話載入至側邊欄
+6. 對話自動儲存至伺服器
 
-### 5. Site-Specific Search Flow
+---
+
+## 搜尋模式
+
+### List 模式（預設）
 ```
-Select Site → Targeted Query → Filtered Results → Site-Specific Features
+查詢 → 結果列表 → 點擊項目 → 開啟來源
 ```
+- 結果按相關性排序
+- 富文字摘要
+- 外部連結於新分頁開啟
 
-**Examples:**
-- Recipe sites: Ingredient lists, cook time, ratings
-- Real estate: Price, location, amenities with map
-- News: Publication date, author, summary
-- E-commerce: Price, reviews, availability
-
-## User Interface States
-
-### Loading States
-1. **Initial Query**: Animated three dots
-2. **Streaming**: Results appear as received
-3. **Images**: Lazy loaded with placeholders
-4. **Maps**: "Loading map..." placeholder
-
-### Error States
-1. **No Results**
-   - Message: "No results were found"
-   - Suggestions for refining query
-   
-2. **Connection Error**
-   - Message: "Unable to connect to server"
-   - Retry button
-   - Offline indicator
-
-3. **Authentication Error**
-   - Message: "Authentication failed"
-   - Clear login state
-   - Redirect to login
-
-4. **Rate Limiting**
-   - Message: "Too many requests"
-   - Countdown timer
-   - Suggestion to wait
-
-### Empty States
-1. **No Conversations**: 
-   - "Start a new conversation" prompt
-   - Centered input visible
-
-2. **No Sites Available**:
-   - Default to "all" sites
-   - Error message in console
-
-3. **No Remembered Items**:
-   - Section hidden
-   - Appears when items added
-
-## Failure States and Recovery
-
-### Network Failures
+### Summarize 模式
 ```
-Request Fails → Retry Logic → User Feedback → Fallback Options
+查詢 → 摘要文字 → 支援結果 → 探索來源
 ```
+- AI 生成摘要優先顯示
+- 相關結果列於下方
+- 引用連結至來源
 
-**Handling:**
-1. Automatic retry with exponential backoff
-2. Show user-friendly error message
-3. Maintain partial results if available
-4. Allow manual retry
-5. Cache results locally when possible
-
-### Streaming Interruptions
+### Generate 模式
 ```
-Stream Breaks → Reconnect Attempt → Resume or Show Partial
+查詢 → AI 回應 → 參考項目 → 深度探索
 ```
+- 完整 AI 生成答案
+- 列出用於生成的項目
+- 支援後續問題
 
-**Recovery:**
-1. EventSource error triggers reconnect
-2. Maximum 3 retry attempts
-3. Show partial results received
-4. "Load more" option if stream incomplete
-5. Complete signal ensures finalization
+---
 
-### Authentication Failures
+## 介面狀態
 
-#### OAuth Flow Failure
+### 載入狀態
+| 狀態 | 顯示 |
+|------|------|
+| 初始查詢 | 三點動畫 |
+| 串流中 | 結果逐一出現 |
+| 圖片 | 延遲載入佔位符 |
+| 地圖 | "載入地圖..." |
+
+### 錯誤狀態
+| 錯誤 | 訊息 | 動作 |
+|------|------|------|
+| 無結果 | "未找到結果" | 建議精煉查詢 |
+| 連線錯誤 | "無法連線至伺服器" | 重試按鈕 |
+| 認證錯誤 | "認證失敗" | 導向登入 |
+| 速率限制 | "請求過多" | 倒數計時 |
+
+### 空狀態
+| 情況 | 處理 |
+|------|------|
+| 無對話 | 顯示「開始新對話」提示 |
+| 無可用網站 | 預設為 "all" |
+| 無記憶項目 | 隱藏該區塊 |
+
+---
+
+## 失敗復原
+
+### 網路失敗
 ```
-OAuth Fails → Clear State → Show Error → Remain Anonymous
+請求失敗 → 重試邏輯 → 使用者回饋 → 備用選項
 ```
-1. OAuth popup blocked: Instruction to allow popups
-2. Provider error: Return to provider selection
-3. Token invalid: Clear and re-authenticate
-4. Network error: Retry with timeout
+1. 指數退避自動重試
+2. 顯示使用者友善錯誤訊息
+3. 保留部分結果（如有）
+4. 允許手動重試
+5. 本地快取結果
 
-#### Session Expiry
+### 串流中斷
 ```
-Token Expires → Refresh Attempt → Re-login if Needed
+串流中斷 → 重連嘗試 → 恢復或顯示部分
 ```
-1. 401 response triggers token refresh
-2. Refresh fails: Clear auth state
-3. Redirect to login with return URL
-4. Preserve current conversation locally
+1. EventSource 錯誤觸發重連
+2. 最多 3 次重試
+3. 顯示已接收的部分結果
+4. 提供「載入更多」選項
 
-### Data Validation Failures
-
-#### Malformed Responses
+### 認證失敗
 ```
-Invalid JSON → Parse Error → Show Error → Continue Service
+OAuth 失敗 → 清除狀態 → 顯示錯誤 → 保持匿名
 ```
-1. Log parsing error
-2. Skip malformed message
-3. Continue processing stream
-4. Show partial results
+- 彈出視窗被阻擋：指示允許彈出視窗
+- 提供者錯誤：返回提供者選擇
+- Token 無效：清除並重新認證
 
-#### Missing Required Fields
-```
-Incomplete Data → Validation → Default Values → Degraded Display
-```
-1. Missing title: Use URL as fallback
-2. Missing description: Show "No description"
-3. Missing score: Default sorting
-4. Missing site: Categorize as "unknown"
+---
 
-## Accessibility Considerations
+## 無障礙考量
 
-### Keyboard Navigation
-- Tab through all interactive elements
-- Enter to send message
-- Escape to close dropdowns
-- Arrow keys in dropdown lists
+### 鍵盤導航
+- Tab 瀏覽所有互動元素
+- Enter 發送訊息
+- Escape 關閉下拉選單
+- 方向鍵於下拉列表
 
-### Screen Reader Support
-- ARIA labels for icons
-- Alt text for images
-- Semantic HTML structure
-- Status announcements for loading
+### 螢幕閱讀器
+- ARIA 標籤
+- 圖片替代文字
+- 語意 HTML
+- 載入狀態公告
 
-### Visual Accessibility
-- High contrast text
-- Focus indicators
-- Sufficient touch targets (44x44px)
-- Responsive text sizing
+### 視覺無障礙
+- 高對比文字
+- 焦點指示器
+- 足夠觸控目標（44x44px）
+- 響應式文字大小
 
-## Performance Optimizations
+---
 
-### Initial Load
-1. Critical CSS inlined
-2. JavaScript modules lazy loaded
-3. Fonts loaded asynchronously
-4. Images lazy loaded below fold
+## 效能優化
 
-### Runtime Performance
-1. Virtual scrolling for long result lists
-2. Debounced search input
-3. Result deduplication
-4. Memory cleanup for old messages
+### 初始載入
+1. 關鍵 CSS 內嵌
+2. JavaScript 延遲載入
+3. 字型非同步載入
+4. 圖片延遲載入
 
-### Mobile Optimizations
-1. Sidebar collapsed by default
-2. Touch-optimized controls
-3. Reduced animation on low-end devices
-4. Offline detection and messaging
+### 執行時效能
+1. 長結果列表虛擬滾動
+2. 搜尋輸入防抖
+3. 結果去重
+4. 舊訊息記憶體清理
 
-## User Feedback Mechanisms
+### 行動裝置優化
+1. 側邊欄預設收合
+2. 觸控優化控制項
+3. 低階裝置減少動畫
+4. 離線偵測與訊息
 
-### Visual Feedback
-- Loading animations
-- Hover states
-- Active states
-- Success/error colors
+---
 
-### Interactive Feedback
-- Click feedback
-- Drag indicators (future)
-- Progress indicators
-- Completion signals
+## 隱私與安全
 
-### Error Communication
-- User-friendly messages
-- Actionable suggestions
-- Technical details in console
-- Support contact options
+### 資料處理
+1. 匿名使用者使用本地儲存
+2. 認證使用者使用伺服器儲存
+3. 設定中提供清除資料選項
+4. 未經同意不追蹤
 
-## Privacy and Security
-
-### Data Handling
-1. Local storage for unauthenticated users
-2. Server storage only when authenticated
-3. Clear data option in settings
-4. No tracking without consent
-
-### Secure Communication
-1. HTTPS enforced
-2. OAuth tokens in Authorization header
-3. XSS prevention in rendering
+### 安全通訊
+1. 強制 HTTPS
+2. OAuth token 於 Authorization header
+3. 渲染時 XSS 防護
 4. Content Security Policy headers
+
+---
+
+*更新：2026-01-19*

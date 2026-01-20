@@ -127,45 +127,20 @@ class DeepResearchHandler(NLWebHandler):
 
     async def _detect_research_mode(self) -> str:
         """
-        Detect which research mode to use based on query.
-
-        Priority 1: User UI selection (query_params['research_mode'])
-        Priority 2: Rule-based detection from query keywords
+        Get research mode from frontend request.
 
         Returns:
             'strict' | 'discovery' | 'monitor'
         """
-        # Priority 1: User UI selection
+        # Use frontend-specified mode
         if 'research_mode' in self.query_params:
             user_mode = self.query_params['research_mode']
             if user_mode in ['strict', 'discovery', 'monitor']:
-                logger.info(f"[DEEP RESEARCH] Using user-selected mode: {user_mode}")
+                logger.info(f"[DEEP RESEARCH] Using frontend mode: {user_mode}")
                 return user_mode
 
-        # Priority 2: Keyword detection
-        query = self.query.lower()
-
-        # Fact-checking indicators → strict mode
-        fact_check_keywords = [
-            'verify', 'is it true', 'fact check', 'check if',
-            '真的嗎', '查證', '驗證', '是真的', '確認'
-        ]
-        if any(kw in query for kw in fact_check_keywords):
-            logger.info("[DEEP RESEARCH] Detected strict mode from keywords")
-            return 'strict'
-
-        # Monitoring/tracking indicators → monitor mode
-        monitor_keywords = [
-            'how has', 'evolution', 'trend', 'sentiment', 'tracking',
-            'over time', 'changed', 'shift',
-            '輿情', '變化', '趨勢', '演變', '追蹤'
-        ]
-        if any(kw in query for kw in monitor_keywords):
-            logger.info("[DEEP RESEARCH] Detected monitor mode from keywords")
-            return 'monitor'
-
-        # Default: discovery mode (general exploration)
-        logger.info("[DEEP RESEARCH] Using default discovery mode")
+        # Default if not specified
+        logger.info("[DEEP RESEARCH] No mode specified, using default: discovery")
         return 'discovery'
 
     async def execute_deep_research(self):
@@ -239,19 +214,30 @@ class DeepResearchHandler(NLWebHandler):
         Reuses parent's temporal detection.
 
         Returns:
-            Dictionary with temporal information
+            Dictionary with temporal information including user_selected flag
+            for BINDING constraint in Analyst prompt.
         """
         # Check if temporal parsing was done
         temporal_range = getattr(self, 'temporal_range', None)
 
-        return {
+        context = {
             'is_temporal_query': temporal_range.get('is_temporal', False) if temporal_range else False,
             'method': temporal_range.get('method') if temporal_range else 'none',
             'start_date': temporal_range.get('start_date') if temporal_range else None,
             'end_date': temporal_range.get('end_date') if temporal_range else None,
+            'start': temporal_range.get('start_date') if temporal_range else None,  # Alias for orchestrator
+            'end': temporal_range.get('end_date') if temporal_range else None,  # Alias for orchestrator
             'relative_days': temporal_range.get('relative_days') if temporal_range else None,
-            'current_date': datetime.now().strftime("%Y-%m-%d")
+            'current_date': datetime.now().strftime("%Y-%m-%d"),
+            # NEW: User-selected time range from clarification (BINDING constraint)
+            'user_selected': temporal_range.get('user_selected', False) if temporal_range else False,
+            'user_choice_label': temporal_range.get('user_choice_label', '') if temporal_range else ''
         }
+
+        if context['user_selected']:
+            logger.info(f"[DEEP RESEARCH] User-selected time constraint: {context['user_choice_label']} ({context['start_date']} to {context['end_date']})")
+
+        return context
 
     def _generate_mock_results(self, items: list, temporal_context: Dict) -> list:
         """

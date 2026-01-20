@@ -1,236 +1,196 @@
-# NLWeb System Map
+# NLWeb 系統總覽
 
-## Overview
-NLWeb is a natural language search system that provides intelligent query processing, multi-source retrieval, and AI-powered response generation. The system consists of a Python backend serving a modern JavaScript frontend via HTTP/HTTPS.
+## 概述
+NLWeb 是自然語言搜尋系統，提供智慧查詢處理、多源檢索與 AI 驅動的回應生成。系統由 Python 後端透過 HTTP/HTTPS 服務現代 JavaScript 前端。
 
-## Key APIs Exposed
+---
 
-### Primary HTTP Endpoints
+## 模組總覽
 
-#### Query Processing
-- **`GET/POST /ask`** - Main query endpoint
-  - Parameters:
-    - `query` (string): User's natural language query
-    - `site` (string/array): Target site(s) to search
-    - `generate_mode` (string): "list", "summarize", or "generate"
-    - `streaming` (boolean): Enable server-sent events streaming
-    - `prev` (array): Previous queries for context
-    - `last_ans` (array): Previous answers for context
-    - `item_to_remember` (string): Items to remember in conversation
-    - `model` (string): LLM model to use
-    - `oauth_id` (string): User ID for authenticated storage
-    - `thread_id` (string): Conversation thread ID
-  - Returns: JSON response or SSE stream of results
+系統分為 7 個主要模組（M0-M6）：
 
-#### Information Endpoints
-- **`GET /sites`** - Get list of available sites
-  - Parameters: `streaming` (boolean)
-  - Returns: Array of site names
+### M0: Indexing（索引與數據）🔴 規劃中
+**目標**：高可信資料工廠。自動化擷取、清洗、驗證到分級儲存。
 
-- **`GET /who`** - Handle "who" queries
-  - Parameters: Same as `/ask`
-  - Returns: Person/entity information
+| 元件 | 狀態 | 檔案 | 說明 |
+|------|------|------|------|
+| Qdrant Vector DB | 🟡 | `retrieval_providers/qdrant.py` | 語意檢索，混合檢索 |
+| Data Chunking | ❌ | `indexing/chunking.py` | 依重要性分級 chunking |
+| Auto Crawler | ❌ | `indexing/crawler.py` | 自動抓取高可信來源 |
+| Format Detector | ❌ | `indexing/format_detector.py` | 偵測網站格式變動 |
+| Quality Gate | ❌ | `indexing/quality_gate.py` | 剔除低品質內容 |
+| Light NER | ❌ | `indexing/light_ner.py` | 輕量實體識別 |
+| Source Authority | ❌ | `indexing/source_authority.py` | 權威分數計算 |
+| Domain Allowlist | ❌ | `indexing/domain_allowlist.py` | 動態白名單 |
+| Regex Parser | ❌ | `indexing/regex_parser.py` | 結構化資料提取 |
+| Anomaly Detector | ❌ | `indexing/anomaly_detector.py` | 資料流健康監控 |
 
-#### Authentication
-- **`GET /api/oauth/config`** - Get OAuth configuration
-  - Returns: Enabled providers and client IDs
+### M1: Input（入口與安全）🟡 部分完成
+**目標**：安全閘道。攔截惡意指令、多模態資料整合、意圖識別。
 
-- **`POST /api/oauth/token`** - Exchange OAuth code for token
-  - Body: `{ code, provider }`
-  - Returns: User info and auth token
+| 元件 | 狀態 | 檔案 | 說明 |
+|------|------|------|------|
+| Prompt Guardrails | ❌ | `core/prompt_guardrails.py` | 防 Prompt Injection |
+| Upload Gateway | ❌ | `input/upload_gateway.py` | OCR/ETL，PDF/Word 導入 |
+| Query Decomposition | ✅ | `chat/chatbot_interface.py` | 複雜問題拆解子查詢 |
 
-#### Conversation Management
-- **`GET /api/conversations`** - Get user's conversations
-  - Headers: `Authorization: Bearer <token>`
-  - Returns: Array of conversations
+### M2: Retrieval（檢索）🟡 部分完成
+**目標**：搜尋引擎核心。整合內部索引、Web Search 與多來源資料。
 
-- **`POST /api/conversations`** - Create/update conversation
-  - Headers: `Authorization: Bearer <token>`
-  - Body: Conversation object
-  - Returns: Saved conversation
+| 元件 | 狀態 | 檔案 | 說明 |
+|------|------|------|------|
+| Internal Search | ✅ | `core/retriever.py` | BM25 + 向量混合檢索 |
+| Web Search | ❌ | `core/web_search.py` | 即時網路資料 |
+| Custom Source | ❌ | `retrieval/custom_source.py` | 用戶上傳資料搜尋 |
+| Multi-search Integrator | ❌ | `core/integrator.py` | 多來源整合 |
 
-- **`DELETE /api/conversations/{id}`** - Delete conversation
-  - Headers: `Authorization: Bearer <token>`
-  - Returns: Success status
+### M3: Ranking（排序）🟢 完成
+**目標**：確保 Reasoning 接收最適合結果。結合規則、XGBoost 與 MMR。
 
-### Streaming Message Types (SSE)
-- `api_version` - API version information
-- `query_analysis` - Query understanding results
-- `decontextualized_query` - Reformulated query for context
-- `remember` - Items to remember
-- `asking_sites` - Sites being queried
-- `result` - Batch of search results
-- `summary` - Summarized response
-- `nlws` - Natural language web search response (for generate mode)
-- `ensemble_result` - Multi-source recommendations
-- `chart_result` - Data visualization HTML
-- `results_map` - Location-based results for mapping
-- `intermediate_message` - Progress updates
-- `complete` - Stream completion signal
-- `error` - Error messages
+| 元件 | 狀態 | 檔案 | 說明 |
+|------|------|------|------|
+| MMR | ✅ | `core/mmr.py` | 多樣性與相關性平衡 |
+| XGBoost Ranking | ✅ | `core/xgboost_ranker.py` | ML 特徵排序 |
+| Rule Weight | ✅ | `core/ranking.py` | Query 類型權重調整 |
+| LLM Weight | ❌ | `ranking/llm_weight.py` | LLM 動態權重調整 |
 
-## Key Data Structures
+### M4: Reasoning（推論）🟢 完成
+**目標**：核心大腦。Evidence chain、Gap detection、Iterative search、知識圖譜。
 
-### Query Request Structure
-```python
-{
-    "query": str,                    # User's query text
-    "site": Union[str, List[str]],   # Target site(s)
-    "generate_mode": str,            # "list", "summarize", "generate"
-    "streaming": bool,               # Enable SSE streaming
-    "prev": List[str],              # Previous queries
-    "last_ans": List[Dict],         # Previous answers [{title, url}]
-    "item_to_remember": str,        # Memory items
-    "model": str,                   # LLM model name
-    "oauth_id": str,                # User identifier
-    "thread_id": str,               # Conversation thread
-    "display_mode": str,            # "full" or other display modes
-}
+| 元件 | 狀態 | 檔案 | 說明 |
+|------|------|------|------|
+| Orchestrator | ✅ | `reasoning/orchestrator.py` | 核心狀態機，Actor-Critic 循環 |
+| Clarification Agent | ✅ | `reasoning/agents/clarification.py` | 歧義解析，選項生成 |
+| Time Range Extractor | ✅ | `core/query_analysis/time_range_extractor.py` | 時間範圍解析 |
+| Analyst Agent | ✅ | `reasoning/agents/analyst.py` | 知識圖譜、Gap Detection |
+| Critic Agent | ✅ | `reasoning/agents/critic.py` | 品質守門員 |
+| Writer Agent | ✅ | `reasoning/agents/writer.py` | 格式化輸出、引用標註 |
+| KG & Gap Detection | 🟡 | `reasoning/agents/analyst.py` | 整合在 Analyst 內 |
+
+### M5: Output（輸出與介面）🟡 部分完成
+**目標**：推論可視化、儀表板與協作管理。
+
+| 元件 | 狀態 | 檔案 | 說明 |
+|------|------|------|------|
+| API Gateway | ✅ | `webserver/aiohttp_server.py` | 路由、驗證、流控 |
+| Frontend UI | ✅ | `static/news-search-prototype.html` | 對話、引用、模式切換 |
+| LLM Safety Net | ❌ | `output/llm_safety_net.py` | 輸出過濾 PII/有害內容 |
+| Visualizer Engine | ❌ | `output/visualizer_engine.py` | 推論鏈 Tree View |
+| Graph Editor | ❌ | `output/graph_editor.py` | 知識圖譜編輯 |
+| Dashboard UI | ❌ | `output/dashboard_ui.py` | 數據看板 |
+| Export Service | 🟡 | - | Word/PPT/Excel 匯出 |
+
+### M6: Infrastructure（基礎設施）🟢 完成
+
+| 元件 | 狀態 | 檔案 | 說明 |
+|------|------|------|------|
+| Postgres DB | ✅ | `retrieval_providers/postgres_client.py` | Metadata 與 Document 儲存 |
+| In-Memory Cache | ✅ | `chat/cache.py` | 檢索結果快取 |
+| SQLite DB | ✅ | `storage/sqlite_dev.py` | 本地開發用 |
+| User Data Storage | ❌ | `storage/user_data.py` | 使用者設定與歷史 |
+| LLM Service | ✅ | `core/llm_client.py` | 統一 LLM API 封裝 |
+| Analytics Engine | ✅ | `core/query_logger.py` | 檢索品質與行為追蹤 |
+
+---
+
+## 核心 Data Flow
+
+### Ingestion（離線）
+```
+Domain Allowlist → Auto Crawler → Format Detect → Quality Gate → Light NER → Data Chunking → Qdrant/Postgres
 ```
 
-### Search Result Format
-```python
-# Internal representation
-[url, json_data, name, site]  # Tuple format
-
-# API response format
-{
-    "url": str,
-    "name": str,
-    "site": str,
-    "score": float,
-    "description": str,
-    "schema_object": dict,  # Schema.org structured data
-    "details": dict,        # Additional details
-}
+### Query Processing（線上）
+```
+API Gateway → (LLM Safety Net) → (Prompt Guardrails) → Query Decomposition
 ```
 
-### Conversation Structure
-```python
-{
-    "id": str,                      # Unique conversation ID
-    "title": str,                   # Conversation title
-    "messages": List[{
-        "content": str,             # Message content
-        "type": str,                # "user" or "assistant"
-        "timestamp": int,           # Unix timestamp
-        "parsedAnswers": List[{     # For assistant messages
-            "title": str,
-            "url": str
-        }]
-    }],
-    "timestamp": int,               # Last update timestamp
-    "site": str,                    # Associated site
-    "user_id": str,                # Owner user ID
-}
+### Retrieval Strategy
+```
+Query Decomposition → [Internal + Web + Custom Search] → Multi-search Integrator
 ```
 
-### Streaming Message Format
-```python
-{
-    "message_type": str,            # Type of message
-    "query_id": str,               # Query identifier
-    # Type-specific fields:
-    "message": str,                # For text messages
-    "results": List[dict],         # For result batches
-    "answer": str,                 # For nlws responses
-    "items": List[dict],           # For nlws items
-    "html": str,                   # For chart results
-    "locations": List[{            # For map results
-        "title": str,
-        "address": str
-    }]
-}
+### Ranking Pipeline
+```
+Retrieval Results → (LLM Weight) → Rule Weight → XGBoost → MMR
 ```
 
-## Logical Flow of Queries to NLWebHandler
-
-### 1. Request Reception (WebServer.py)
+### Reasoning Loop（Deep Research）
 ```
-HTTP Request → Route Matching → Handler Selection → Parameter Parsing
-```
-
-### 2. Handler Initialization (baseHandler.py)
-```
-NLWebHandler Creation → State Initialization → Streaming Setup
-```
-
-### 3. Query Preparation Phase
-Parallel execution of:
-
-#### Fast Track Path:
-```
-Direct Vector Search → Early Results → Stream if Available
+Orchestrator → Clarification (if ambiguous) → Time Range Extractor
+           ↓
+    Analyst Agent → KG & Gap Detection
+           ↓
+    Critic Agent → PASS/REJECT
+           ↓
+    Writer Agent → 格式化輸出
+           ↓
+    (Back to Orchestrator if REJECT)
 ```
 
-#### Analysis Path:
+### Output
 ```
-1. Decontextualization (if prev queries exist)
-   - Use LLM to reformulate query with context
-   
-2. Query Analysis
-   - Item type detection
-   - Relevance checking
-   - Memory processing
-   
-3. Tool Selection
-   - Load tool definitions
-   - Evaluate tools against query
-   - Route to specialized handler if matched
+Writer → API → (LLM Safety Net) → Frontend UI → Visualizer/Dashboard/Export
 ```
 
-### 4. Retrieval Phase (retriever.py)
-```
-1. Prepare Query
-   - Apply site filters
-   - Format for vector DB
-   
-2. Parallel Search
-   - Query multiple vector DB endpoints
-   - Aggregate results
-   - Deduplicate by URL
-   
-3. Result Processing
-   - Convert to standard format
-   - Apply initial filtering
-```
+---
 
-### 5. Ranking Phase (ranking.py)
-```
-1. LLM-based Ranking (if enabled)
-   - Score results for relevance
-   - Apply query-specific criteria
-   
-2. Post-Ranking Tasks
-   - Additional filtering
-   - Result enrichment
-   - Score normalization
-```
+## 關鍵檔案對應（運行時狀態）
 
-### 6. Response Generation
-Based on `generate_mode`:
+| 狀態區域 | 主要檔案 |
+|----------|----------|
+| Server Startup | `webserver/aiohttp_server.py` |
+| Connection Layer | `webserver/middleware/`, `chat/websocket.py` |
+| Request Processing | `core/baseHandler.py`, `core/state.py` |
+| Pre-Retrieval | `core/query_analysis/*.py` |
+| Retrieval | `core/retriever.py`, `core/bm25.py` |
+| Ranking | `core/ranking.py`, `core/xgboost_ranker.py`, `core/mmr.py` |
+| Reasoning | `reasoning/orchestrator.py`, `reasoning/agents/*.py` |
+| Post-Ranking | `core/post_ranking.py` |
+| Chat | `chat/conversation.py`, `chat/websocket.py` |
+| SSE Streaming | `core/utils/message_senders.py`, `core/schemas.py` |
 
-#### List Mode:
-```
-Format Results → Stream result messages → Complete
-```
+詳細狀態流程參見：`docs/architecture/state-machine-diagram.md`
 
-#### Summarize Mode:
-```
-Results → LLM Summarization → Stream summary + results → Complete
-```
+---
 
-#### Generate Mode:
-```
-Results → GenerateAnswer Handler → RAG Generation → Stream nlws message → Complete
-```
+## 主要 API
 
-### 7. Storage Phase (if authenticated)
-```
-Collect Results → Format Conversation → Store to Database
-```
+### HTTP 端點
 
-## System Components Interaction
+#### 查詢處理
+- **`GET/POST /ask`** - 主要查詢端點
+  - 參數：`query`、`site`、`generate_mode`、`streaming`、`prev`、`model`、`thread_id`
+
+#### 資訊端點
+- **`GET /sites`** - 可用網站清單
+- **`GET /who`** - 「誰」類查詢
+- **`GET /health`** - 健康檢查
+
+#### 認證
+- **`GET /api/oauth/config`** - OAuth 設定
+- **`POST /api/oauth/token`** - 交換 token
+
+#### 對話管理
+- **`GET /api/conversations`** - 對話列表
+- **`POST /api/conversations`** - 建立/更新對話
+- **`DELETE /api/conversations/{id}`** - 刪除對話
+
+### SSE 訊息類型
+| 類型 | 說明 |
+|------|------|
+| `begin-nlweb-response` | 開始處理 |
+| `result` | 搜尋結果 |
+| `intermediate_result` | Reasoning 進度 |
+| `summary` | 摘要回應 |
+| `clarification_required` | 需要澄清 |
+| `results_map` | 地圖資料 |
+| `end-nlweb-response` | 處理完成 |
+| `error` | 錯誤訊息 |
+
+---
+
+## 系統架構圖
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌─────────────┐
@@ -244,19 +204,26 @@ Collect Results → Format Conversation → Store to Database
                     │    (Base)    │     │  Handlers   │
                     └──────────────┘     └─────────────┘
                             │
-                    ┌───────┴───────┐
-                    ▼               ▼
-            ┌─────────────┐ ┌─────────────┐
-            │  Retriever  │ │     LLM     │
-            │ (Vector DB) │ │  Provider   │
-            └─────────────┘ └─────────────┘
+            ┌───────────────┼───────────────┐
+            ▼               ▼               ▼
+    ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
+    │  Retriever  │ │   Ranking   │ │  Reasoning  │
+    │ (Vector+BM25)│ │(LLM+XGB+MMR)│ │(Actor-Critic)│
+    └─────────────┘ └─────────────┘ └─────────────┘
 ```
 
-## Configuration System
-- **config.yaml** - Main configuration
-- **config_retrieval.yaml** - Retrieval endpoints
-- **config_llm.yaml** - LLM provider settings
-- **oauth_config.yaml** - OAuth provider configuration
-- **Site-specific configs** - Per-site customization
+---
 
-The system is designed for extensibility, supporting multiple vector databases, LLM providers, and specialized tools while maintaining a consistent API interface.
+## 設定檔
+
+| 檔案 | 用途 |
+|------|------|
+| `config/config.yaml` | 主設定 |
+| `config/config_retrieval.yaml` | 檢索端點 |
+| `config/config_llm.yaml` | LLM 提供者 |
+| `config/config_reasoning.yaml` | Reasoning 參數 |
+| `config/prompts.xml` | Prompt 模板 |
+
+---
+
+*更新：2026-01-19*

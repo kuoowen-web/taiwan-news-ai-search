@@ -1814,6 +1814,114 @@
         main.with-sidebar {
             margin-left: 280px;
         }
+
+        /* Right Sidebar for Site Filter */
+        .sidebar-right {
+            position: fixed;
+            right: 0;
+            top: 60px;
+            width: 240px;
+            height: calc(100vh - 60px);
+            background: white;
+            border-left: 1px solid #e5e5e5;
+            padding: 20px;
+            overflow-y: auto;
+            z-index: 90;
+            display: none;
+        }
+
+        .sidebar-right.visible {
+            display: block;
+        }
+
+        .site-filter-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .site-filter-actions {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .site-filter-btn {
+            padding: 4px 8px;
+            font-size: 12px;
+            color: #2563eb;
+            background: transparent;
+            border: 1px solid #2563eb;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .site-filter-btn:hover {
+            background: #2563eb;
+            color: white;
+        }
+
+        .site-filter-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .site-filter-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            padding: 8px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .site-filter-item:hover {
+            background: #e5e7eb;
+        }
+
+        .site-filter-item input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            margin-top: 2px;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .site-filter-item-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .site-filter-item-name {
+            font-size: 13px;
+            font-weight: 500;
+            color: #1a1a1a;
+        }
+
+        .site-filter-item-desc {
+            font-size: 11px;
+            color: #6b7280;
+            margin-top: 2px;
+            line-height: 1.3;
+        }
+
+        /* Adjust main content when right sidebar is visible */
+        main.with-right-sidebar {
+            margin-right: 240px;
+        }
+
+        main.with-sidebar.with-right-sidebar {
+            margin-left: 280px;
+            margin-right: 240px;
+        }
     </style>
     <!-- D3.js for Knowledge Graph Visualization -->
     <script src="https://d3js.org/d3.v7.min.js"></script>
@@ -1859,6 +1967,26 @@
                     <div class="progress-bar-fill" id="progressBarFill" style="width: 0%"></div>
                 </div>
                 <div class="progress-text" id="progressText">準備上傳...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Sidebar for Site Filter -->
+    <div class="sidebar-right" id="siteFilterSidebar">
+        <div class="site-filter-title">
+            <span>🔍</span>
+            <span>來源篩選</span>
+        </div>
+
+        <div class="site-filter-actions">
+            <button class="site-filter-btn" onclick="selectAllSites()">全選</button>
+            <button class="site-filter-btn" onclick="deselectAllSites()">全不選</button>
+        </div>
+
+        <div class="site-filter-list" id="siteFilterList">
+            <!-- Sites will be loaded dynamically -->
+            <div style="color: #9ca3af; font-size: 13px; text-align: center; padding: 20px 0;">
+                載入中...
             </div>
         </div>
     </div>
@@ -2171,6 +2299,10 @@
         const TEMP_USER_ID = 'demo_user_001';
         let userFiles = [];
         let includePrivateSources = true; // Default to true
+
+        // Site Filter - list of available sites and selected sites
+        let availableSites = [];
+        let selectedSites = []; // Empty means "all"
 
         // ==================== ANALYTICS INITIALIZATION ====================
         const analyticsTracker = new AnalyticsTrackerSSE('/api/analytics/event');
@@ -2966,7 +3098,7 @@
                 // Call 1: Get articles with relevance scores using 'summarize' mode
                 const summarizeUrl = new URL('/ask', base);
                 summarizeUrl.searchParams.append('query', query);
-                summarizeUrl.searchParams.append('site', 'all');
+                summarizeUrl.searchParams.append('site', getSelectedSitesParam());
                 summarizeUrl.searchParams.append('generate_mode', 'summarize');
                 summarizeUrl.searchParams.append('streaming', 'false');
                 // Send conversation history for context
@@ -2991,7 +3123,7 @@
                 // This allows us to receive memory messages in real-time
                 const generateUrl = new URL('/ask', base);
                 generateUrl.searchParams.append('query', query);
-                generateUrl.searchParams.append('site', 'all');
+                generateUrl.searchParams.append('site', getSelectedSitesParam());
                 generateUrl.searchParams.append('generate_mode', 'generate');
                 generateUrl.searchParams.append('streaming', 'true'); // Enable streaming for memory messages
                 if (parentQueryId) {
@@ -3066,11 +3198,13 @@
         }
 
         // Deep Research Mode function
-        async function performDeepResearch(query, skipClarification = false, comprehensiveSearch = false) {
+        async function performDeepResearch(query, skipClarification = false, comprehensiveSearch = false, userTimeRange = null, userTimeLabel = null) {
             console.log('=== Deep Research Mode ===');
             console.log('Query:', query);
             console.log('Skip clarification:', skipClarification);
             console.log('Comprehensive search:', comprehensiveSearch);
+            console.log('User time range:', userTimeRange);
+            console.log('User time label:', userTimeLabel);
 
             // Save query before clearing (for conversation history)
             const savedQuery = query;
@@ -3110,7 +3244,7 @@
                 // Call Deep Research API with SSE streaming
                 const deepResearchUrl = new URL('/api/deep_research', base);
                 deepResearchUrl.searchParams.append('query', query);
-                deepResearchUrl.searchParams.append('site', 'all');
+                deepResearchUrl.searchParams.append('site', getSelectedSitesParam());
                 deepResearchUrl.searchParams.append('research_mode', currentResearchMode); // User-selected mode
                 deepResearchUrl.searchParams.append('max_iterations', '3');
 
@@ -3124,6 +3258,17 @@
                 if (comprehensiveSearch) {
                     deepResearchUrl.searchParams.append('comprehensive_search', 'true');
                     console.log('[Deep Research] Comprehensive search enabled (high diversity)');
+                }
+
+                // Add user-selected time range (BINDING constraint for Analyst)
+                if (userTimeRange && userTimeRange.start && userTimeRange.end) {
+                    deepResearchUrl.searchParams.append('time_range_start', userTimeRange.start);
+                    deepResearchUrl.searchParams.append('time_range_end', userTimeRange.end);
+                    deepResearchUrl.searchParams.append('user_selected_time', 'true');
+                    if (userTimeLabel) {
+                        deepResearchUrl.searchParams.append('user_time_label', userTimeLabel);
+                    }
+                    console.log('[Deep Research] User-selected time range:', userTimeRange.start, 'to', userTimeRange.end);
                 }
 
                 // Add enable_kg flag (Phase KG)
@@ -4213,13 +4358,16 @@
                 question.options.forEach(opt => {
                     const queryModifier = opt.query_modifier || '';
                     const isComprehensive = opt.is_comprehensive || false;
+                    // Serialize time_range as JSON string for data attribute
+                    const timeRangeJson = opt.time_range ? JSON.stringify(opt.time_range) : '';
 
                     contentHTML += `
                         <button class="option-chip"
                                 data-option-id="${opt.id}"
                                 data-label="${escapeHTML(opt.label)}"
                                 data-query-modifier="${escapeHTML(queryModifier)}"
-                                data-is-comprehensive="${isComprehensive}">
+                                data-is-comprehensive="${isComprehensive}"
+                                data-time-range="${escapeHTML(timeRangeJson)}">
                             ${escapeHTML(opt.label)}
                         </button>
                     `;
@@ -4291,11 +4439,23 @@
                     const customInput = questionBlock.querySelector('.custom-option-input');
                     if (customInput) customInput.value = '';
 
-                    // Store selection
+                    // Parse time_range from data attribute if present
+                    let timeRange = null;
+                    const timeRangeJson = this.dataset.timeRange;
+                    if (timeRangeJson) {
+                        try {
+                            timeRange = JSON.parse(timeRangeJson);
+                        } catch (e) {
+                            console.warn('[Clarification] Failed to parse time_range:', e);
+                        }
+                    }
+
+                    // Store selection with time_range
                     selectedAnswers[questionId] = {
                         label: this.dataset.label,
                         query_modifier: this.dataset.queryModifier,
-                        is_comprehensive: this.dataset.isComprehensive === 'true'
+                        is_comprehensive: this.dataset.isComprehensive === 'true',
+                        time_range: timeRange  // NEW: structured time range
                     };
 
                     console.log('[Clarification] Selected:', questionId, selectedAnswers[questionId]);
@@ -4369,6 +4529,8 @@
             let timeModifier = '';
             let scopeModifier = '';
             let entityModifier = '';
+            let userTimeRange = null;  // NEW: structured time range from clarification
+            let userTimeLabel = null;  // NEW: user's label for the time selection
 
             questions.forEach(q => {
                 const answer = selectedAnswers[q.question_id];
@@ -4383,6 +4545,12 @@
                 if (answer.query_modifier) {
                     if (q.clarification_type === 'time') {
                         timeModifier = answer.query_modifier;
+                        // Extract structured time_range if available
+                        if (answer.time_range) {
+                            userTimeRange = answer.time_range;
+                            userTimeLabel = answer.label;
+                            console.log('[Clarification] User selected time range:', userTimeRange, 'label:', userTimeLabel);
+                        }
                     } else if (q.clarification_type === 'scope') {
                         scopeModifier = answer.query_modifier;
                     } else if (q.clarification_type === 'entity') {
@@ -4409,6 +4577,7 @@
 
             console.log('[Clarification] Clarified query:', clarifiedQuery);
             console.log('[Clarification] All comprehensive:', allComprehensive);
+            console.log('[Clarification] User time range:', userTimeRange);
 
             // Add user message showing selection
             const chatMessagesEl = document.getElementById('chatMessages');
@@ -4423,9 +4592,9 @@
             chatMessagesEl.appendChild(userMessageDiv);
             chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
 
-            // Re-submit with skip_clarification flag
+            // Re-submit with skip_clarification flag AND user-selected time range
             console.log('[Clarification] Re-submitting with skip_clarification=true');
-            performDeepResearch(clarifiedQuery, true, allComprehensive);
+            performDeepResearch(clarifiedQuery, true, allComprehensive, userTimeRange, userTimeLabel);
         }
 
         // View tabs
@@ -5105,7 +5274,7 @@
                 const base = window.location.origin;
                 const deepResearchUrl = new URL('/api/deep_research', base);  // Corrected endpoint
                 deepResearchUrl.searchParams.append('query', clarifiedQuery);
-                deepResearchUrl.searchParams.append('site', 'all');
+                deepResearchUrl.searchParams.append('site', getSelectedSitesParam());
                 deepResearchUrl.searchParams.append('research_mode', currentResearchMode);
                 deepResearchUrl.searchParams.append('max_iterations', '3');
                 deepResearchUrl.searchParams.append('skip_clarification', 'true');  // Skip clarification check
@@ -5154,9 +5323,10 @@
         // Toggle sidebar visibility based on mode
         function updateSidebarVisibility() {
             const sidebar = document.getElementById('userKnowledgeSidebar');
+            const sidebarRight = document.getElementById('siteFilterSidebar');
             const mainElement = document.querySelector('main');
 
-            // Show sidebar only in chat and deep_research modes
+            // Show left sidebar only in chat and deep_research modes
             if (currentMode === 'chat' || currentMode === 'deep_research') {
                 sidebar.classList.add('visible');
                 mainElement.classList.add('with-sidebar');
@@ -5164,6 +5334,89 @@
                 sidebar.classList.remove('visible');
                 mainElement.classList.remove('with-sidebar');
             }
+
+            // Show right sidebar (site filter) in search and deep_research modes
+            if (currentMode === 'search' || currentMode === 'deep_research') {
+                sidebarRight.classList.add('visible');
+                mainElement.classList.add('with-right-sidebar');
+            } else {
+                sidebarRight.classList.remove('visible');
+                mainElement.classList.remove('with-right-sidebar');
+            }
+        }
+
+        // ==================== SITE FILTER FUNCTIONS ====================
+
+        // Load available sites from backend
+        async function loadSiteFilters() {
+            try {
+                const response = await fetch('/sites_config');
+                const data = await response.json();
+
+                if (data.sites && Array.isArray(data.sites)) {
+                    availableSites = data.sites;
+                    // By default, all sites are selected
+                    selectedSites = availableSites.map(s => s.name);
+                    renderSiteFilters();
+                }
+            } catch (error) {
+                console.error('Failed to load site filters:', error);
+                document.getElementById('siteFilterList').innerHTML =
+                    '<div style="color: #dc2626; font-size: 13px; text-align: center; padding: 20px 0;">載入失敗</div>';
+            }
+        }
+
+        // Render site filter checkboxes
+        function renderSiteFilters() {
+            const container = document.getElementById('siteFilterList');
+            if (availableSites.length === 0) {
+                container.innerHTML = '<div style="color: #9ca3af; font-size: 13px; text-align: center; padding: 20px 0;">沒有可用的來源</div>';
+                return;
+            }
+
+            container.innerHTML = availableSites.map(site => `
+                <label class="site-filter-item">
+                    <input type="checkbox"
+                           value="${site.name}"
+                           ${selectedSites.includes(site.name) ? 'checked' : ''}
+                           onchange="toggleSiteFilter('${site.name}')">
+                    <div class="site-filter-item-info">
+                        <div class="site-filter-item-name">${site.name}</div>
+                        <div class="site-filter-item-desc">${site.description}</div>
+                    </div>
+                </label>
+            `).join('');
+        }
+
+        // Toggle individual site filter
+        function toggleSiteFilter(siteName) {
+            const index = selectedSites.indexOf(siteName);
+            if (index > -1) {
+                selectedSites.splice(index, 1);
+            } else {
+                selectedSites.push(siteName);
+            }
+        }
+
+        // Select all sites
+        function selectAllSites() {
+            selectedSites = availableSites.map(s => s.name);
+            renderSiteFilters();
+        }
+
+        // Deselect all sites
+        function deselectAllSites() {
+            selectedSites = [];
+            renderSiteFilters();
+        }
+
+        // Get selected sites as parameter value
+        function getSelectedSitesParam() {
+            // If all sites are selected or none selected, return 'all'
+            if (selectedSites.length === 0 || selectedSites.length === availableSites.length) {
+                return 'all';
+            }
+            return selectedSites.join(',');
         }
 
         // Toggle private sources checkbox
@@ -5325,6 +5578,7 @@
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', () => {
             loadUserFiles();
+            loadSiteFilters();
             updateSidebarVisibility();
         });
 

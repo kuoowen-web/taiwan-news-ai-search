@@ -1,6 +1,5 @@
 # Core dependencies - always required
 azure-search-documents>=11.4.0
-# Core dependencies - always required
 azure-identity>=1.15.0
 chardet>=5.2.0
 jsonschema>=4.19.1
@@ -103,3 +102,6 @@ pytz>=2024.1
 
 # yFinance for global stock price data (Tier 6 API)
 yfinance>=0.2.0
+
+# TypeAgent: Structured LLM output with automatic retry and validation
+instructor>=1.4.0

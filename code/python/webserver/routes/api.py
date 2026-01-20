@@ -9,6 +9,7 @@ from methods.generate_answer import GenerateAnswer
 from webserver.aiohttp_streaming_wrapper import AioHttpStreamingWrapper
 from core.retriever import get_vector_db_client
 from core.utils.utils import get_param
+from core.config import CONFIG
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ def setup_api_routes(app: web.Application):
     # Info endpoints
     app.router.add_get('/who', who_handler)
     app.router.add_get('/sites', sites_handler)
+    app.router.add_get('/sites_config', sites_config_handler)
 
 
 async def ask_handler(request: web.Request) -> web.Response:
@@ -244,6 +246,42 @@ async def sites_handler(request: web.Request) -> web.Response:
             "error": f"Failed to get sites: {str(e)}"
         }
         return web.json_response(error_data, status=500)
+
+
+async def sites_config_handler(request: web.Request) -> web.Response:
+    """Handle /sites_config endpoint to get site configurations from sites.xml"""
+
+    try:
+        # Get site configs from CONFIG (loaded from sites.xml)
+        site_configs = {}
+        if hasattr(CONFIG, 'nlweb') and hasattr(CONFIG.nlweb, 'site_configs'):
+            site_configs = CONFIG.nlweb.site_configs
+
+        # Convert to list format for frontend
+        sites_list = []
+        for site_name, config in site_configs.items():
+            sites_list.append({
+                "name": site_name,
+                "description": config.description,
+                "item_types": config.item_types
+            })
+
+        # Sort by name
+        sites_list.sort(key=lambda x: x["name"])
+
+        response_data = {
+            "message_type": "sites_config",
+            "sites": sites_list
+        }
+
+        return web.json_response(response_data)
+
+    except Exception as e:
+        logger.error(f"Error getting sites config: {e}", exc_info=True)
+        return web.json_response({
+            "message_type": "error",
+            "error": f"Failed to get sites config: {str(e)}"
+        }, status=500)
 
 
 async def deep_research_handler(request: web.Request) -> web.Response:

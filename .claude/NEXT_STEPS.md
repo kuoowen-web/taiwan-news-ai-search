@@ -1,210 +1,180 @@
-# Next Steps - Production Optimization & Refinement
+# 下一步 - Production 優化
 
-## Current Focus (Dec 2024 - Jan 2025)
+## 目前重點（2026-01）
 
-### 🔄 IN PROGRESS: Performance Optimization
+### 🔄 進行中：效能優化
 
-**Goal**: Optimize reasoning system for production workloads (latency, cost, quality)
+**目標**：優化 Reasoning 系統的延遲、成本、品質
 
-**Completed Foundation**:
-- ✅ Reasoning Module (orchestrator + 4 agents, 864 lines)
-- ✅ Deep Research Method (SSE streaming, 667 lines)
-- ✅ XGBoost ML Ranking (Phase A/B/C fully deployed)
-- ✅ Time Range & Clarification (3-tier parsing, ambiguity handling)
-- ✅ BM25, MMR, Analytics Infrastructure
+**已完成基礎**：
+- ✅ Reasoning 模組（orchestrator + 4 agents）
+- ✅ Deep Research Method（SSE 串流）
+- ✅ XGBoost ML Ranking（Phase A/B/C）
+- ✅ Time Range & Clarification
+- ✅ BM25, MMR, Analytics 基礎設施
+- ✅ Tier 6 API 整合（Stock, Weather, Wikipedia）
 
-**Current Optimization Tasks**:
+**目前優化任務**：
 
-1. **Reduce Reasoning Latency**
-   - Profile iteration times (Analyst/Critic/Writer phases)
-   - Identify bottlenecks in LLM calls and processing
-   - Optimize prompt token usage (reduce context size)
-   - Consider parallel agent execution where possible
+1. **降低 Reasoning 延遲**
+   - 分析迭代時間（Analyst/Critic/Writer 階段）
+   - 找出 LLM 呼叫瓶頸
+   - 優化 prompt token 使用量
+   - 考慮並行 agent 執行
 
-2. **Improve Citation Quality**
-   - Test hallucination guard effectiveness with edge cases
-   - Refine source tier filtering rules based on real usage
-   - Add citation formatting options (footnotes, inline, references)
-   - Validate citation links work correctly
+2. **改善引用品質**
+   - 測試幻覺防護邊界案例
+   - 根據實際使用調整來源分層規則
+   - 增加引用格式選項
+   - 驗證引用連結正確性
 
-3. **Enhance User Experience**
-   - Improve clarification question quality and relevance
-   - Add progress indicators for long research queries
-   - Implement user feedback loop for clarification responses
-   - Better error messaging and graceful degradation
+3. **提升使用者體驗**
+   - 改善澄清問題品質
+   - 加入長查詢進度指示器
+   - 實作使用者回饋迴圈
+   - 更好的錯誤訊息
 
-4. **Cost Optimization**
-   - Analyze token usage across agents
-   - Slim down prompts without losing quality
-   - Implement smarter caching strategies
-   - Consider model downgrade for non-critical agents
-
----
-
-## Short-term Tasks (Next 2-4 Weeks)
-
-### 1. Reasoning System Refinement
-
-**Priority**: High
-
-**Tasks**:
-- Profile reasoning performance with 20+ diverse queries
-- Measure iteration times, token usage, cost per query
-- Identify optimization opportunities
-- Implement top 3 optimizations
-
-**Success Metrics**:
-- Reduce average latency by 20-30%
-- Reduce cost per query by 15-25%
-- Maintain or improve citation quality
+4. **成本優化**
+   - 分析各 agent token 使用量
+   - 精簡 prompt 但維持品質
+   - 實作智慧快取策略
+   - 考慮非關鍵 agent 降級模型
 
 ---
 
-### 2. Clarification Flow UI
+## 短期任務（2-4 週）
 
-**Priority**: Medium
+### 1. Reasoning 系統精煉
+**優先級**：高
 
-**Tasks**:
-- Design clarification question UI in `news-search-prototype.html`
-- Implement user response capture
-- Integrate response with re-query flow
-- Test with ambiguous queries
+**任務**：
+- 使用 20+ 多樣查詢分析效能
+- 測量迭代時間、token 使用、每查詢成本
+- 找出優化機會
+- 實作前 3 項優化
 
-**Files to Modify**:
-- `static/news-search-prototype.html` (frontend UI)
-- `webserver/routes/api.py` (clarification endpoints)
-- `methods/deep_research.py` (response handling)
+**成功指標**：
+- 平均延遲降低 20-30%
+- 每查詢成本降低 15-25%
+- 維持或改善引用品質
 
----
+### 2. 澄清流程 UI
+**優先級**：中
 
-### 3. Hallucination Guard Testing
+**任務**：
+- 設計澄清問題 UI
+- 實作使用者回應捕捉
+- 整合回應與重新查詢流程
+- 測試模糊查詢
 
-**Priority**: High
+**需修改檔案**：
+- `static/news-search-prototype.html`
+- `webserver/routes/api.py`
+- `methods/deep_research.py`
 
-**Tasks**:
-- Create test suite with 10+ edge cases
-- Test citation verification logic
-- Validate set operations (writer sources ⊆ analyst sources)
-- Document failure modes and mitigations
+### 3. 幻覺防護測試
+**優先級**：高
 
-**Edge Cases to Test**:
-- Writer adds new sources not in analyst citations
-- Analyst provides no citations
-- Numbered citations mismatch between iterations
-- Empty or malformed citation arrays
+**任務**：
+- 建立 10+ 邊界案例測試套件
+- 測試引用驗證邏輯
+- 驗證集合操作（writer sources ⊆ analyst sources）
+- 記錄失敗模式與緩解方案
 
----
+### 4. A/B 測試基礎設施
+**優先級**：中
 
-### 4. A/B Testing Infrastructure
-
-**Priority**: Medium
-
-**Tasks**:
-- Implement feature flag for reasoning vs standard search
-- Add query routing logic (10% → 50% → 100%)
-- Set up metrics dashboard for comparison
-- Define success criteria (CTR, dwell time, quality ratings)
-
----
-
-## Medium-term Tasks (1-2 Months)
-
-### 1. Model Retraining Pipeline
-
-**Goal**: Continuous learning for XGBoost ranker
-
-**Tasks**:
-- Set up automated weekly/monthly retraining
-- Incorporate latest user interaction data
-- Evaluate model performance trends
-- Deploy new models with A/B testing
+**任務**：
+- 實作 reasoning vs 標準搜尋 feature flag
+- 加入查詢路由邏輯（10% → 50% → 100%）
+- 設定比較指標儀表板
+- 定義成功標準（CTR、停留時間、品質評分）
 
 ---
 
-### 2. Advanced Reasoning Features
+## 中期任務（1-2 月）
 
-**Goal**: Enhance reasoning capabilities
+### 1. 模型重訓練管道
+**目標**：XGBoost ranker 持續學習
 
-**Tasks**:
-- Multi-turn research (follow-up queries)
-- Cross-reference detection (contradictions, confirmations)
-- Temporal analysis (trend detection, timeline construction)
-- Comparative research (side-by-side analysis)
+**任務**：
+- 設定自動每週/月重訓練
+- 納入最新使用者互動資料
+- 評估模型效能趨勢
+- 以 A/B 測試部署新模型
 
----
+### 2. 進階 Reasoning 功能
+**目標**：增強推論能力
 
-### 3. User Personalization
+**任務**：
+- 多輪研究（後續查詢）
+- 交叉參考偵測（矛盾、確認）
+- 時間分析（趨勢偵測、時間線建構）
+- 比較研究（並列分析）
 
-**Goal**: Tailor results to user preferences
+### 3. 使用者個人化
+**目標**：依使用者偏好調整結果
 
-**Tasks**:
-- Track user interaction patterns
-- Build user preference profiles
-- Personalize source tier weights
-- Adaptive λ tuning for MMR
-
----
-
-## Long-term Vision (3-6 Months)
-
-### 1. Multi-Objective Optimization
-
-- Balance relevance, diversity, freshness, and trustworthiness
-- Incorporate business metrics (engagement, revenue)
-- Dynamic objective weighting based on query type
+**任務**：
+- 追蹤使用者互動模式
+- 建立使用者偏好檔案
+- 個人化來源分層權重
+- MMR 自適應 λ 調整
 
 ---
 
-### 2. Online Learning
+## 長期願景（3-6 月）
 
-- Update models incrementally with new data
-- Faster adaptation to changing patterns
-- Real-time feedback loops
+### 1. 多目標優化
+- 平衡相關性、多樣性、新鮮度、可信度
+- 納入商業指標（參與度、營收）
+- 依查詢類型動態目標權重
+
+### 2. 線上學習
+- 以新資料增量更新模型
+- 更快適應變化模式
+- 即時回饋迴圈
+
+### 3. 擴展來源覆蓋
+- 增加更多 tier 1-2 來源（擴展至 20+ 來源）
+- 改善未知來源處理
+- 多語言支援（英文、日文）
 
 ---
 
-### 3. Expanded Source Coverage
+## 已完成
 
-- Add more tier 1-2 sources (expand knowledge base to 20+ sources)
-- Improve unknown source handling
-- Multi-language support (English, Japanese)
+### ✅ Track A：Analytics 基礎設施
+- PostgreSQL via Neon.tech
+- 查詢日誌與 parent_query_id 連結
+- 多點擊追蹤
+- 儀表板與 CSV 匯出
+
+### ✅ Track B：BM25 實作
+- 自訂 BM25 實作
+- Intent 偵測（EXACT_MATCH, SEMANTIC, BALANCED）
+- 混合評分（α * vector + β * bm25）
+
+### ✅ Track C：MMR 實作
+- 經典 MMR 公式與 intent-based λ 調整
+- Cosine similarity 多樣性測量
+
+### ✅ Track D：Reasoning 系統
+- Actor-Critic orchestrator
+- 4 個專門 agent
+- 來源分層過濾
+- 幻覺防護與引用驗證
+
+### ✅ Track E：Deep Research Method
+- 與 NLWeb 管道整合
+- 時間範圍抽取
+- 澄清流程
+- SSE 串流與引用
+
+### ✅ Track F：XGBoost ML Ranking
+- Phase A/B/C 完整部署
+- Shadow mode → Rollout
 
 ---
 
-## Previously Completed
-
-### ✅ Track A: Analytics Infrastructure (Nov 2024)
-- PostgreSQL database via Neon.tech
-- Query logging with parent_query_id linking
-- Multi-click tracking (left/middle/right)
-- Dashboard with parent query filtering
-- Foreign key integrity issues resolved
-
-### ✅ Track B: BM25 Implementation (Nov 2024)
-- Custom BM25 implementation (733 lines)
-- Intent detection (EXACT_MATCH, SEMANTIC, BALANCED)
-- Hybrid scoring (α * vector + β * bm25)
-- Analytics logging
-
-### ✅ Track C: MMR Implementation (Nov 2024)
-- Classic MMR formula with intent-based λ tuning
-- Cosine similarity for diversity measurement
-- Integration after LLM ranking
-
-### ✅ Track D: Reasoning System (Dec 2024)
-- Actor-Critic orchestrator (864 lines)
-- 4 specialized agents (Analyst, Critic, Writer, Clarification)
-- Source tier filtering (3 modes, 10 sources)
-- Hallucination guard and citation verification
-- Console tracer and iteration logger
-
-### ✅ Track E: Deep Research Method (Dec 2024)
-- Integration with NLWeb pipeline
-- Time range extraction (3-tier parsing)
-- Clarification flow (ambiguity detection)
-- SSE streaming with citations
-
-### ✅ Track F: XGBoost ML Ranking (Dec 2024)
-- Phase A: Infrastructure (feature engineering, ranker, trainer)
-- Phase B: Training pipeline (binary → LambdaMART → XGBRanker)
-- Phase C: Production deployment (shadow mode → rollout)
+*更新：2026-01-19*

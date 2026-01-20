@@ -1,94 +1,80 @@
-# Docker Deployment Best Practices
+# Docker 部署最佳實踐
 
-## Python Version Compatibility
+## Python 版本相容性
 
-### Critical Lesson from Production (2025-01-20)
+### 關鍵教訓
 
-**Problem**: Dockerfile used Python 3.13, causing production failure.
+**問題**：Dockerfile 使用 Python 3.13，導致 production 失敗。
 
-**Root Cause**:
-- **Dockerfile was using Python 3.13** (lines 2, 20, 44)
-- Python 3.13 is too new → qdrant-client installs a broken/incomplete version
-- The `AsyncQdrantClient` class existed but was **missing the `search()` method**
-- Render logs confirmed: `HAS search: False`, `MODULE FILE: /usr/local/lib/python3.13/site-packages/`
-- Local development worked because it was using Python 3.11
+**根本原因**：
+- Dockerfile 使用 Python 3.13
+- Python 3.13 太新 → qdrant-client 安裝不完整版本
+- `AsyncQdrantClient` 類別存在但**缺少 `search()` 方法**
+- 本地開發正常是因為使用 Python 3.11
 
-### Issue Details
+### 解決方案
 
-Python 3.13 is too new for many ML/data libraries:
-- `qdrant-client` installs but `AsyncQdrantClient` is **missing methods** (e.g., `search()`)
-- Other async libraries may have similar incomplete implementations
-- Local development may use different Python version → issue only appears in production
-
-### Solution
-
-1. **Use Python 3.11 for production** - mature, stable, broad library support
+1. **使用 Python 3.11**
    ```dockerfile
-   FROM python:3.11-slim AS builder       # Line 2 (was 3.13)
-   FROM python:3.11-slim                  # Line 20 (was 3.13)
-   COPY --from=builder /usr/local/lib/python3.11/site-packages ...  # Line 44
+   FROM python:3.11-slim AS builder       # Line 2
+   FROM python:3.11-slim                  # Line 20
+   COPY --from=builder /usr/local/lib/python3.11/site-packages ...
    ```
 
-2. **Pin critical dependencies** - avoid surprises from bleeding-edge versions
+2. **釘選關鍵依賴**
    ```
-   qdrant-client==1.11.3  # Specific version known to work
+   qdrant-client==1.11.3
    ```
 
-3. **Add runtime diagnostics** - verify environment at startup
+3. **加入執行時診斷**
    ```python
-   # At module load time:
-   logger.critical(f"🐍 PYTHON VERSION: {sys.version}")
-   logger.critical(f"🔍 MODULE HAS method: {'method' in dir(Module)}")
+   logger.critical(f"PYTHON VERSION: {sys.version}")
+   logger.critical(f"MODULE HAS method: {'method' in dir(Module)}")
    ```
 
-4. **Clear Docker build cache** when changing base images
-   - Render: "Manual Deploy" → "Clear build cache & deploy"
-   - Otherwise old cached layers persist
-
-### Validation
-
-After fixing:
-- ✅ Render deployment successful with Python 3.11
-- ✅ `AsyncQdrantClient.search()` available
-- ✅ Production queries working correctly
-- ✅ BM25 and MMR functioning as expected
+4. **變更 base image 時清除 Docker build cache**
+   - Render："Manual Deploy" → "Clear build cache & deploy"
 
 ---
 
-## Debugging Docker Deployment Failures
+## 除錯 Docker 部署失敗
 
-### When production fails but local works:
+### 當 production 失敗但本地正常時：
 
-1. **Check Python version first** - most common cause of "missing method" errors
-2. **Check Docker build logs** - verify correct base image used
-3. **Add diagnostic logging** - log versions and available methods at startup
-4. **Clear build cache** - force complete rebuild
-5. **Check for multiple processes** - old processes may still be running
+1. **先檢查 Python 版本** - 最常見的「缺少方法」錯誤原因
+2. **檢查 Docker build 日誌** - 驗證正確 base image
+3. **加入診斷日誌** - 啟動時記錄版本和可用方法
+4. **清除 build cache** - 強制完整重建
+5. **檢查多個進程** - 舊進程可能仍在執行
 
-### Red Flags
+### 警示訊號
 
-- Error: `'ClassName' object has no attribute 'method_name'`
-- Library imports but class is incomplete
-- Works locally but fails in Docker
-- → Likely Python version incompatibility
-
----
-
-## Key Lessons
-
-1. **Check Python version first** when Docker deployments fail mysteriously
-2. **Always clear build cache** when changing base images
-3. **Pin dependency versions** to avoid compatibility surprises
-4. **Add diagnostic logging at module load** to verify runtime environment
-5. **Test with bleeding-edge Python cautiously** - libraries may not be ready
+- 錯誤：`'ClassName' object has no attribute 'method_name'`
+- Library import 成功但類別不完整
+- 本地正常但 Docker 失敗
+- → 可能是 Python 版本不相容
 
 ---
 
-## Deployment Checklist
+## 關鍵教訓
 
-- [ ] Verify Dockerfile uses Python 3.11 (not 3.13)
-- [ ] Pin critical dependencies (qdrant-client, etc.)
-- [ ] Add runtime diagnostics for key libraries
-- [ ] Clear Docker build cache before deploying
-- [ ] Test deployment in staging environment first
-- [ ] Monitor logs for version/method availability errors
+1. **Docker 部署失敗時先檢查 Python 版本**
+2. **變更 base image 時務必清除 build cache**
+3. **釘選依賴版本**避免相容性問題
+4. **在模組載入時加入診斷日誌**驗證執行環境
+5. **謹慎測試最新 Python** - library 可能尚未準備好
+
+---
+
+## 部署檢查清單
+
+- [ ] 驗證 Dockerfile 使用 Python 3.11（非 3.13）
+- [ ] 釘選關鍵依賴（qdrant-client 等）
+- [ ] 加入關鍵 library 執行時診斷
+- [ ] 部署前清除 Docker build cache
+- [ ] 先在 staging 環境測試
+- [ ] 監控日誌中的版本/方法可用性錯誤
+
+---
+
+*更新：2026-01-19*

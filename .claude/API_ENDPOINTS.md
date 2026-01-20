@@ -1,10 +1,11 @@
-# API Endpoints Documentation
+# API 端點文件
 
-## Chat Configuration
+## Chat 系統
+
 ### GET /health/chat
-Get chat system health and configuration.
+取得 Chat 系統健康狀態與設定。
 
-**Response:**
+**回應**：
 ```json
 {
   "status": "healthy",
@@ -18,30 +19,32 @@ Get chat system health and configuration.
 }
 ```
 
-## Conversations
+---
+
+## 對話管理
 
 ### GET /chat/my-conversations
-Get list of user's conversations.
+取得使用者的對話列表。
 
-**Query Parameters:**
-- `limit` (optional): Number of conversations to return (default: 20)
-- `offset` (optional): Pagination offset (default: 0)
+**Query 參數**：
+- `limit`（可選）：回傳數量（預設：20）
+- `offset`（可選）：分頁偏移量（預設：0）
 
-**Response:**
+**回應**：
 ```json
 {
   "conversations": [
     {
       "id": "conv_abc123",
-      "title": "Project Discussion",
+      "title": "專案討論",
       "site": "all",
       "participantCount": 3,
       "lastMessage": {
-        "content": "Looking good!",
-        "timestamp": "2024-01-15T10:30:00Z"
+        "content": "看起來不錯！",
+        "timestamp": "2026-01-15T10:30:00Z"
       },
-      "createdAt": "2024-01-15T09:00:00Z",
-      "updatedAt": "2024-01-15T10:30:00Z"
+      "createdAt": "2026-01-15T09:00:00Z",
+      "updatedAt": "2026-01-15T10:30:00Z"
     }
   ],
   "total": 42,
@@ -51,15 +54,15 @@ Get list of user's conversations.
 ```
 
 ### POST /chat/create
-Create a new conversation.
+建立新對話。
 
-**Request Body:**
+**Request Body**：
 ```json
 {
-  "title": "New Chat",
+  "title": "新對話",
   "participants": [
     {
-      "user_id": "user_123", 
+      "user_id": "user_123",
       "name": "Alice"
     }
   ],
@@ -67,25 +70,14 @@ Create a new conversation.
 }
 ```
 
-**Response:**
-```json
-{
-  "id": "conv_xyz789",
-  "title": "New Chat",
-  "site": "hackernews",
-  "participants": [...],
-  "createdAt": "2024-01-15T11:00:00Z"
-}
-```
+---
 
-Note: Conversation details are loaded via WebSocket connection after joining.
-Joining is handled by including the conversation ID in the WebSocket URL.
+## 網站
 
-## Sites
 ### GET /sites?streaming=false
-Get available sites for search/chat context.
+取得可用於搜尋/聊天的網站列表。
 
-**Response:**
+**回應**：
 ```json
 {
   "sites": [
@@ -93,37 +85,34 @@ Get available sites for search/chat context.
       "id": "hackernews",
       "name": "Hacker News",
       "domain": "news.ycombinator.com"
-    },
-    {
-      "id": "reddit",
-      "name": "Reddit",
-      "domain": "reddit.com"
     }
   ]
 }
 ```
 
-## WebSocket Connection
-### WebSocket /chat/ws/{conv_id}
-Real-time bidirectional communication for chat.
+---
 
-**Connection URL:**
+## WebSocket 連線
+
+### WebSocket /chat/ws/{conv_id}
+即時雙向通訊。
+
+**連線 URL**：
 ```
 wss://example.com/chat/ws/conv_abc123
 ```
-Note: Authentication handled via cookies/headers from the HTTP upgrade request.
 
-**Outgoing Message Types:**
+### 發送訊息類型
 
-1. **Message**
+**一般訊息**：
 ```json
 {
   "type": "message",
-  "content": "Hello everyone!"
+  "content": "大家好！"
 }
 ```
 
-2. **Typing Indicator**
+**正在輸入指示**：
 ```json
 {
   "type": "typing",
@@ -131,7 +120,7 @@ Note: Authentication handled via cookies/headers from the HTTP upgrade request.
 }
 ```
 
-3. **Sync Request** (after reconnection)
+**同步請求**（重連後）：
 ```json
 {
   "type": "sync",
@@ -139,40 +128,40 @@ Note: Authentication handled via cookies/headers from the HTTP upgrade request.
 }
 ```
 
-**Incoming Message Types:**
+### 接收訊息類型
 
-1. **Chat Message**
+**聊天訊息**：
 ```json
 {
   "type": "message",
   "data": {
     "id": "msg_123",
-    "content": "Hello!",
+    "content": "你好！",
     "senderId": "user_123",
     "senderName": "Alice",
-    "timestamp": "2024-01-15T10:00:00Z",
+    "timestamp": "2026-01-15T10:00:00Z",
     "sequenceId": 43
   }
 }
 ```
 
-2. **AI Response**
+**AI 回應**：
 ```json
 {
   "type": "ai_response",
   "data": {
     "id": "ai_msg_456",
-    "content": "Based on my search...",
+    "content": "根據我的搜尋...",
     "responseType": "search_results",
     "metadata": {
       "sources": ["hackernews", "reddit"]
     },
-    "timestamp": "2024-01-15T10:01:00Z"
+    "timestamp": "2026-01-15T10:01:00Z"
   }
 }
 ```
 
-3. **Participant Update**
+**參與者更新**：
 ```json
 {
   "type": "participant_update",
@@ -181,37 +170,32 @@ Note: Authentication handled via cookies/headers from the HTTP upgrade request.
     "participant": {
       "id": "user_789",
       "displayName": "Charlie",
-      "joinedAt": "2024-01-15T10:05:00Z"
+      "joinedAt": "2026-01-15T10:05:00Z"
     }
   }
 }
 ```
 
-4. **Typing Indicator**
-```json
-{
-  "type": "typing",
-  "data": {
-    "participantId": "user_456",
-    "participantName": "Bob",
-    "isTyping": true
-  }
-}
-```
-
-5. **Error**
+**錯誤**：
 ```json
 {
   "type": "error",
   "data": {
     "code": "QUEUE_FULL",
-    "message": "Message queue is full. Please wait."
+    "message": "訊息佇列已滿，請稍候。"
   }
 }
 ```
 
-## Authentication
-All endpoints require authentication via:
-- Bearer token in Authorization header
-- Token in sessionStorage for WebSocket connection
-- OAuth user info in localStorage (non-sensitive only)
+---
+
+## 認證
+
+所有端點需透過以下方式認證：
+- Authorization header 中的 Bearer token
+- WebSocket 連線的 sessionStorage token
+- localStorage 中的 OAuth 使用者資訊（僅非敏感資料）
+
+---
+
+*更新：2026-01-19*

@@ -70,107 +70,23 @@ class Ranking:
 
     FAST_TRACK = 1
     REGULAR_TRACK = 2
-    WHO_RANKING = 3
-    CONVERSATION_SEARCH = 4
+    CONVERSATION_SEARCH = 3
 
     # This is the default ranking prompt, in case, for some reason, we can't find the site_type.xml file.
-    RANKING_PROMPT = ["""  Assign a score between 0 and 100 to the following {site.itemType}
-based on how relevant it is to the user's question. Use your knowledge from other sources, about the item, to make a judgement. 
+    RANKING_PROMPT = ["""Assign a score between 0 and 100 to the following {site.itemType}
+based on how relevant it is to the user's question.
 If the score is above 50, provide a short description of the item highlighting the relevance to the user's question, without mentioning the user's question.
-Provide an explanation of the relevance of the item to the user's question, without mentioning the user's question or the score or explicitly mentioning the term relevance.
-If the score is below 75, in the description, include the reason why it is still relevant.
 The user's question is: {request.query}. The item's description is {item.description}""",
-    {"score" : "integer between 0 and 100", 
- "description" : "short description of the item"}]
-    
-    WHO_RANKING_PROMPT = ["""  Assign a score between 0 and 100 to the following site
-                          based on how relevant the site may be to answering the user's question.
-                          The user's question is: {request.query}. The site's description is {item.description}
-                          
-                          Additionally, if this site is relevant (score > 50), provide an optimized query 
-                          that should be sent to this specific site. The query should be tailored to:
-                          - Match the site's specific domain and expertise
-                          - Extract the most relevant information from that site
-                          - Be more specific than the original query when appropriate
-                          
-                          For example, if the user asks "I need to make bread" and the site is about:
-                          - Kitchen equipment: rewrite to "bread making equipment" or "bread baking tools"
-                          - Ingredients/groceries: rewrite to "bread ingredients" or "flour yeast for bread"
-                          - Recipes: keep as "bread recipes" or just "bread"
-                          
-                          If the original query is already well-suited for the site, use the original query.
-                          """,
-                            {"score" : "integer between 0 and 100", 
-                            "description" : "short description of the item",
-                            "query" : "the optimized query to send to this site (only if score > 50)"}]
-    
-    CONVERSATION_SEARCH_PROMPT = ["""Assign a score between 0 and 100 to the following past conversation
-                          based on how relevant it is to the user's current search query.
-                          Consider both the original question asked and the response received.
-                          
-                          The user's search query is: {request.query}
-                          
-                          Past conversation details:
-                          {item.description}
-                          
-                          Score higher if:
-                          - The conversation directly addresses the search topic
-                          - The response contains useful information related to the query
-                          - The conversation summary or topics match the search intent
-                          
-                          Provide a brief description highlighting why this conversation is relevant.""",
-                          {"score": "integer between 0 and 100",
-                           "description": "brief description of why this past conversation is relevant to the search"}]
-    
-    PRODUCT_FOCUSED_PROMPT = ["""Assign a score between 0 and 100 based on how well this product matches the user's search.
-                          
-                          Focus on product details in your description:
-                          - Product name and brand (if available)
-                          - Price or price range
-                          - Key features or specifications
-                          - Why this specific product matches the search
-                          
-                          Do NOT use phrases like "This webpage" or "This page" or "This site".
-                          Instead, directly describe the product itself.
-                          
-                          Examples of good descriptions:
-                          - "All-Clad D3 stainless steel frying pan, 12-inch, $149, triple-ply construction for even heating"
-                          - "Le Creuset enameled cast iron Dutch oven in cherry red, 5.5 quart capacity, oven-safe to 500°F"
-                          - "Breville Smart Oven Air Fryer, $399, 13 cooking functions including air fry, dehydrate, and slow cook"
-                          
-                          The user's search: {request.query}
-                          Product information: {item.description}""",
-                          {"score": "integer between 0 and 100",
-                           "description": "product-focused description with brand, price, and key features"}]
- 
+    {"score" : "integer between 0 and 100",
+     "description" : "short description of the item"}]
+
     RANKING_PROMPT_NAME = "RankingPrompt"
      
     def get_ranking_prompt(self):
         site = self.handler.site
         item_type = self.handler.item_type
-        
-        # Check for special ranking types first
-        if (self.ranking_type == Ranking.WHO_RANKING):
-            return self.WHO_RANKING_PROMPT[0], self.WHO_RANKING_PROMPT[1]
-        if (self.ranking_type == Ranking.CONVERSATION_SEARCH):
-            return self.CONVERSATION_SEARCH_PROMPT[0], self.CONVERSATION_SEARCH_PROMPT[1]
-        
-        # Check if using Bing search or any e-commerce/product sites
-        db_param = self.handler.query_params.get('db') if hasattr(self.handler, 'query_params') else None
-        
-        # Use product-focused prompt for Bing search or known e-commerce sites
-        if db_param == 'bing_search':
-            logger.debug("Using product-focused prompt for Bing search")
-            return self.PRODUCT_FOCUSED_PROMPT[0], self.PRODUCT_FOCUSED_PROMPT[1]
-        
-        # Also use product-focused prompt for known e-commerce sites
-        if site and any(ecommerce_site in site.lower() for ecommerce_site in 
-                       ['williams-sonoma', 'amazon', 'ebay', 'walmart', 'target', 'bestbuy', 
-                        'homedepot', 'lowes', 'wayfair', 'etsy', 'shopify']):
-            logger.debug(f"Using product-focused prompt for e-commerce site: {site}")
-            return self.PRODUCT_FOCUSED_PROMPT[0], self.PRODUCT_FOCUSED_PROMPT[1]
-        
-        # Check for custom prompts
+
+        # Check for custom prompts in prompts.xml
         prompt_str, ans_struc = find_prompt(site, item_type, self.RANKING_PROMPT_NAME)
         if prompt_str is None:
             logger.debug("Using default ranking prompt")
@@ -185,8 +101,6 @@ The user's question is: {request.query}. The item's description is {item.descrip
             self.ranking_type_str = "FAST_TRACK"
         elif ranking_type == self.REGULAR_TRACK:
             self.ranking_type_str = "REGULAR_TRACK"
-        elif ranking_type == self.WHO_RANKING:
-            self.ranking_type_str = "WHO_RANKING"
         elif ranking_type == self.CONVERSATION_SEARCH:
             self.ranking_type_str = "CONVERSATION_SEARCH"
         else:
@@ -357,11 +271,7 @@ The user's question is: {request.query}. The item's description is {item.descrip
                     "description": result["ranking"]["description"],
                     "schema_object": result["schema_object"]
                 }
-                
-                # Include query field for WHO ranking if present
-                if self.ranking_type == Ranking.WHO_RANKING and "query" in result["ranking"]:
-                    result_item["query"] = result["ranking"]["query"]
-                
+
                 json_results.append(result_item)
                 
                 result["sent"] = True

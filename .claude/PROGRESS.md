@@ -1,301 +1,165 @@
-# Progress Log - ML Search Enhancement Project
+# 進度日誌
 
-## Recent Milestones
+## 最近里程碑
 
-### 2024-12-22: Reasoning System COMPLETED ✅
+### 2026-01：Tier 6 API 整合 ✅
 
-**Deep Research & Multi-Agent System Fully Deployed**
+**知識增強 API 已部署**
 
-Completed all components of the reasoning infrastructure:
-
-1. **Reasoning Orchestrator** (`reasoning/orchestrator.py` - 864 lines)
-   - Actor-Critic loop with max 3 iterations
-   - Multi-phase pipeline: Filter → Analyst → Critic → Writer
-   - Hallucination guard (citation verification: writer sources ⊆ analyst sources)
-   - Unified context formatting (single source of truth prevents citation mismatch)
-   - Graceful degradation (continuous REJECT → Writer takes best draft)
-   - Token budget control (MAX_TOTAL_CHARS = 20,000)
-
-2. **Multi-Agent System**
-   - **Analyst Agent** (`reasoning/agents/analyst.py` - 400 lines): Research & synthesis with citation tracking
-   - **Critic Agent** (`reasoning/agents/critic.py` - 312 lines): Quality review + gap detection
-   - **Writer Agent** (`reasoning/agents/writer.py` - 398 lines): Final formatting with markdown citations
-   - **Clarification Agent** (`reasoning/agents/clarification.py` - 183 lines): Ambiguity detection & question generation
-   - **Base Agent** (`reasoning/agents/base.py` - 236 lines): Retry logic, timeout handling, Pydantic validation
-
-3. **Source Tier Filtering** (`reasoning/filters/source_tier.py` - 221 lines)
-   - 3 modes: **strict** (tier 1-2), **discovery** (tier 1-5), **monitor** (compare 1 vs 5)
-   - 10 source knowledge base entries (中央社, 公視, 聯合報, 經濟日報, etc.)
-   - Content enrichment with `[Tier X | type]` labels
-   - `NoValidSourcesError` exception handling
-
-4. **Time Range Extraction** (`core/query_analysis/time_range_extractor.py` - 367 lines)
-   - 3-tier parsing: **Regex** → **LLM** → **Keyword fallback**
-   - Absolute date conversion for stateless consistency
-   - Handles "最近", "去年", explicit dates
-
-5. **Clarification Flow**
-   - Detects ambiguous queries via Clarification Agent
-   - Returns clarifying questions to frontend
-   - User feedback loop integration (UI in progress)
-
-6. **Deep Research Method** (`methods/deep_research.py` - 667 lines)
-   - Integrated reasoning orchestrator with NLWeb search pipeline
-   - SSE streaming support with real-time events
-   - NLWeb Item format output (title, snippet, citations)
-   - Time range extraction integration
-
-7. **Debugging Utils**
-   - **ConsoleTracer** (`reasoning/utils/console_tracer.py` - 514 lines): Real-time event visualization with colors
-   - **IterationLogger** (`reasoning/utils/iteration_logger.py` - 194 lines): JSON event stream logging
-   - Configurable via `config/config_reasoning.yaml`
-
-**Configuration**:
-- `config/config_reasoning.yaml` (43 lines): reasoning params, source tiers, mode configs
-- `config/prompts.xml`: Agent prompts (analyst, critic, writer, clarification)
-
-**Key Metrics**:
-- 5 major commits pushed (Dec 15-22)
-- 3,500+ lines of production code
-- 4 specialized agents operational
-- 0 known critical bugs
-
-**Commits**:
-- `3c52b82` (Dec 22) - 小修正：改善 iteration logger 的路徑與日誌行為
-- `68d18c9` (Dec 22) - Update deep_research and news-search prototype
-- `1b16b28` (Dec 22) - Add clarification flow, hallucination guard, time-range handling and citation links
-- `bfe1548` (Dec 18) - Finalize reasoning tweaks and .gitignore updates
-- `5aee036` (Dec 18) - Add reasoning module and design/plan docs
-- `b1b89a9` (Dec 15) - Include architecture assets and add reasoning module
+為 Gap Resolution 新增外部 API 整合：
+- Stock APIs（Yahoo Finance Taiwan/Global）
+- Weather APIs
+- Wikipedia API
+- Web Search（Bing/Google）
+- LLM Knowledge
 
 ---
 
-### 2024-12-10: XGBoost Phase C COMPLETED ✅
+### 2025-12：Reasoning 系統完成 ✅
 
-**Machine Learning Ranking Fully Deployed**
+**Deep Research 與多 Agent 系統完整部署**
 
-Completed all three phases of XGBoost implementation:
+1. **Reasoning Orchestrator**（`reasoning/orchestrator.py`）
+   - Actor-Critic 迴圈（max 3 iterations）
+   - 多階段管道：Filter → Analyst → Critic → Writer
+   - 幻覺防護（writer sources ⊆ analyst sources）
+   - 統一上下文格式化
+   - 優雅降級
 
-1. **Phase A: Infrastructure** ✅
-   - Feature engineering module (`training/feature_engineering.py`)
-   - XGBoost ranker module (`core/xgboost_ranker.py` - 243 lines)
-   - Training pipeline (`training/xgboost_trainer.py`)
+2. **多 Agent 系統**
+   - **Analyst Agent**：研究與合成、引用追蹤
+   - **Critic Agent**：品質審查 + gap 偵測
+   - **Writer Agent**：最終格式化與 markdown 引用
+   - **Clarification Agent**：歧義偵測與問題生成
+   - **Base Agent**：重試邏輯、超時處理、Pydantic 驗證
 
-2. **Phase B: Training Pipeline** ✅
-   - Binary classification trainer (Phase 1)
-   - LambdaMART trainer (Phase 2)
-   - XGBRanker trainer (Phase 3)
-   - Model evaluation (NDCG@10, Precision@10, MAP)
-   - Model saving with metadata
+3. **來源分層過濾**
+   - 3 模式：strict（tier 1-2）、discovery（tier 1-5）、monitor（1 vs 5）
+   - 10 個來源知識庫（中央社、公視、聯合報等）
 
-3. **Phase C: Production Deployment** ✅
-   - Integration with `core/ranking.py` (LLM → XGBoost → MMR pipeline)
-   - Shadow mode validation
-   - Model registry with versioning
-   - Export/validation tools for training data
+4. **時間範圍抽取**
+   - 3 層解析：Regex → LLM → Keyword fallback
+   - 絕對日期轉換
 
-**Key Features**:
-- 29 features from analytics schema
-- XGBoost uses LLM scores as features (features 22-27)
-- Global model caching for performance
-- Confidence score calculation
+5. **Deep Research Method**
+   - 與 NLWeb 搜尋管道整合
+   - SSE 串流支援
+   - 引用連結
 
-**Files Added**:
-- `training/export_training_data.py` (350 lines)
-- `training/validate_training_data.py` (207 lines)
-- `training/verify_db_state.py` (133 lines)
-- `models/xgboost_phase_c1.json` + metadata
-
-**Documentation**:
-- `algo/XGBoost_implementation.md`
-- `algo/PHASE_A_COMPLETION_REPORT.md`
-- `algo/PHASE_B_STATUS_REPORT.md`
-
-**Commit**: `c873fc9` (Dec 1) - XGBoost Phase A infrastructure + cleanup debug code
+6. **除錯工具**
+   - ConsoleTracer：即時事件視覺化
+   - IterationLogger：JSON 事件流日誌
 
 ---
 
-### 2024-11-17: Week 1-2 Track A COMPLETED ✅
+### 2025-12：XGBoost Phase C 完成 ✅
 
-**Analytics Infrastructure Fully Deployed**
+**ML Ranking 完整部署**
 
-Completed all components of the analytics logging infrastructure:
+1. **Phase A：基礎設施** ✅
+   - Feature engineering 模組
+   - XGBoost ranker 模組
+   - 訓練管道
 
-1. **Database Schema v2** (commits: 1f49e1c, b60db38, 64be933)
-   - Deployed PostgreSQL via Neon.tech
-   - 4 core tables + 1 ML feature table
-   - Parent Query ID column added
-   - Schema migration automated
+2. **Phase B：訓練管道** ✅
+   - Binary classification trainer
+   - LambdaMART trainer
+   - XGBRanker trainer
+   - 模型評估（NDCG@10, Precision@10, MAP）
 
-2. **Foreign Key Integrity** (commits: 743871e, fc44ded)
-   - Fixed async queue race condition
-   - Made log_query_start() synchronous
-   - Moved analytics logging before cache checks
-   - All foreign key violations resolved
+3. **Phase C：Production 部署** ✅
+   - 與 `core/ranking.py` 整合（LLM → XGBoost → MMR）
+   - Shadow mode 驗證
+   - 模型 registry 與版本控制
 
-3. **Multi-Click Tracking** (commit: 122c697)
-   - Added left, middle, right click support
-   - auxclick and contextmenu event listeners
-   - Complete user interaction tracking
-
-4. **Batch Event Handling** (commits: 0e913c9, e66b723)
-   - Added result_clicked to batch handler
-   - Fixed Decimal JSON serialization
-   - Batch analytics endpoint operational
-
-5. **Parent Query ID Linking** (commit: 64be933)
-   - Links generate requests to summarize requests
-   - Dashboard filters to show parent queries only
-   - Eliminates data noise from duplicate entries
-   - Cost column removed (FinOps separate from ML ranking)
-
-6. **Debug Cleanup** (commit: 7cf85a8)
-   - Removed all console print statements
-   - Clean production logs
-   - Improved debugging workflow
-
-**Key Metrics**:
-- 6 major commits pushed
-- 0 known bugs remaining
-- Production deployment successful
-- $0/month operational cost
+**關鍵功能**：
+- 29 features 從 analytics schema
+- XGBoost 使用 LLM 分數作為 features
+- Global model caching
+- Confidence score 計算
 
 ---
 
-### 2024-11-12: Analytics Dashboard Deployed
+### 2025-11：Analytics 基礎設施完成 ✅
 
-- Dashboard UI with real-time metrics
-- Training data CSV export functionality
-- Top clicked results tracking
+1. **資料庫 Schema v2**
+   - PostgreSQL via Neon.tech
+   - 4 核心表 + 1 ML feature 表
+   - Parent Query ID 欄位
 
----
+2. **Foreign Key 完整性**
+   - 修復 async queue race condition
+   - log_query_start() 改為同步
+   - 解決所有 foreign key 違規
 
-### 2024-11-10: Database Migration to PostgreSQL
+3. **多點擊追蹤**
+   - 左、中、右鍵支援
+   - auxclick 和 contextmenu 事件監聽
 
-- Migrated from SQLite to PostgreSQL (Neon.tech)
-- Dual database support maintained
-- Schema v2 columns added
-
----
-
-## Previous Milestones (Pre-ML Enhancement)
-
-### 2024-08-02
-- **3ae6293** - Implement conversation API endpoints and storage
-  - Added conversation persistence functionality
-  - Implemented API endpoints for conversation management
-
-### 2024-07-XX
-- **4c0cccf** - Query rewrite for interfacing with simple search query endpoints (#302)
-  - Enhanced query processing capabilities
-  - Improved search endpoint integration
-
-- **6bc437b** - Create release notes since July 9 (#307)
-  - Documentation updates
-  - Release preparation
-
-- **cd78c3d** - Update prompts.xml
-  - Enhanced prompt configurations
-  - System prompt improvements
-
-- **09fb613** - Required item type in URL
-  - URL parameter validation
-  - Type safety improvements
-
-- **0d3c0aa** - Overview files (#287)
-  - Documentation structure
-  - System overview updates
-
-- **031a3d2** - Tool selector state fix (#296)
-  - Bug fix for tool selector
-  - State management improvements
-
-- **bedab60** - Docker fix (#295)
-  - Docker configuration updates
-  - Path corrections post-refactor
+4. **Batch 事件處理**
+   - result_clicked 加入 batch handler
+   - Decimal JSON 序列化修復
 
 ---
 
-## Completed Features
+## 已完成功能
 
-### Core Search Functionality
-- ✅ Multi-turn conversation support
-- ✅ OAuth authentication (Google, Facebook, Microsoft, GitHub)
-- ✅ Real-time streaming responses (SSE)
-- ✅ Multiple search modes (list, summarize, generate)
-- ✅ Query rewrite functionality
-- ✅ Qdrant vector search integration
+### 核心搜尋
+- ✅ 多輪對話支援
+- ✅ OAuth 認證（Google/Facebook/Microsoft/GitHub）
+- ✅ SSE 即時串流
+- ✅ 多種搜尋模式（list/summarize/generate）
+- ✅ Query rewrite
+- ✅ Qdrant 向量搜尋
 - ✅ LLM-based ranking
 
-### Analytics & Monitoring (NEW)
-- ✅ PostgreSQL analytics database (Neon.tech)
-- ✅ Query logging with full lifecycle tracking
-- ✅ User interaction tracking (clicks, dwell time, scroll depth)
-- ✅ Multi-click support (left/middle/right)
-- ✅ Parent Query ID linking
-- ✅ Analytics dashboard with real-time metrics
-- ✅ CSV export for ML training data
-- ✅ Foreign key integrity across all tables
+### Analytics & Monitoring
+- ✅ PostgreSQL analytics database
+- ✅ 查詢日誌與完整生命週期追蹤
+- ✅ 使用者互動追蹤
+- ✅ 多點擊支援
+- ✅ Parent Query ID 連結
+- ✅ Analytics 儀表板
+- ✅ CSV 匯出
 
 ---
 
-## Current Focus
+## 目前重點
 
-### 2024-12 Onward: Post-Reasoning Refinement
+### 2026-01：Production 優化
 
-All major tracks (A-F) completed. Current work focuses on:
-- **Production Monitoring**: Track reasoning system performance metrics
-- **UX Iteration**: Refine clarification flow based on user feedback
-- **Citation Quality**: Improve source linking and formatting
-- **Cost Optimization**: Profile and reduce token usage in agent prompts
-
----
-
-## Bug Fixes (Recent)
-
-### Foreign Key Constraint Violations (RESOLVED)
-- ✅ Async queue race condition → Made log_query_start() synchronous
-- ✅ Cache early return → Moved analytics before cache check
-- ✅ Missing parent_query_id column → Manual ALTER TABLE
-- ✅ UUID suffix inconsistency → Changed to simple timestamp format
-
-### Click Tracking Issues (RESOLVED)
-- ✅ Multi-click support → Added auxclick and contextmenu listeners
-- ✅ Batch handler missing clicks → Added result_clicked case
-- ✅ Decimal serialization → Convert to float for JSON
+所有主要 tracks（A-F）完成。目前工作：
+- **Production 監控**：追蹤 reasoning 系統效能指標
+- **UX 迭代**：根據使用者回饋精煉澄清流程
+- **引用品質**：改善來源連結與格式
+- **成本優化**：分析並減少 agent prompt token 使用
 
 ---
 
-## Next Up
+## Bug 修復
 
-1. **BM25 Implementation** (This Week)
-   - Choose library/implementation approach
-   - Create `code/python/core/bm25.py`
-   - Integrate with Qdrant retrieval
+### Foreign Key 約束違規（已解決）
+- ✅ Async queue race condition → log_query_start() 改同步
+- ✅ Cache 提前返回 → 分析移至 cache 檢查前
+- ✅ 缺少 parent_query_id 欄位 → 手動 ALTER TABLE
+- ✅ UUID 後綴不一致 → 改用簡單 timestamp 格式
 
-2. **MMR Implementation** (This Week)
-   - Implement MMR algorithm
-   - Create `code/python/core/mmr.py`
-   - Replace LLM diversity call
-
-3. **Integration & Optimization** (Week 3)
-   - Deploy BM25 + MMR to production
-   - Slim down LLM prompts
-   - A/B testing
-
-4. **XGBoost Training** (Week 4-6)
-   - Collect 10,000+ queries
-   - Feature engineering
-   - Model training
+### 點擊追蹤問題（已解決）
+- ✅ 多點擊支援 → 新增 auxclick 和 contextmenu 監聽
+- ✅ Batch handler 缺少點擊 → 新增 result_clicked case
+- ✅ Decimal 序列化 → 轉換為 float
 
 ---
 
-## Deployment History
+## 部署歷史
 
-| Date | Version | Description | Status |
-|------|---------|-------------|--------|
-| 2024-11-17 | Analytics v2.0 | Parent Query ID + Multi-click + Debug cleanup | ✅ Deployed |
-| 2024-11-12 | Analytics v1.5 | Dashboard UI + CSV export | ✅ Deployed |
-| 2024-11-10 | Analytics v1.0 | PostgreSQL migration + Schema v2 | ✅ Deployed |
-| 2024-08-02 | Core v2.0 | Conversation API endpoints | ✅ Deployed |
-| 2024-07-XX | Core v1.5 | Query rewrite + Tool selector fixes | ✅ Deployed |
+| 日期 | 版本 | 說明 | 狀態 |
+|------|------|------|------|
+| 2026-01 | Tier 6 API | Knowledge Enrichment APIs | ✅ 已部署 |
+| 2025-12 | Reasoning v1.0 | Actor-Critic + 4 Agents | ✅ 已部署 |
+| 2025-12 | XGBoost v1.0 | ML Ranking Phase C | ✅ 已部署 |
+| 2025-11 | Analytics v2.0 | Parent Query ID + 多點擊 | ✅ 已部署 |
+
+---
+
+*更新：2026-01-19*

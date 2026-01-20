@@ -1,72 +1,78 @@
-# NLWeb Project Context
+# 專案上下文
 
-## Current Status: Reasoning & Research System (Completed Dec 2024)
+## 目前狀態（2026-01）
 
-### Current Focus
-**Performance Optimization Phase** - Refining reasoning system for production use
+### 目前重點
+**效能優化階段** - 精煉 Reasoning 系統以供 Production 使用
 
-### Recently Completed (Dec 2024)
-- ✅ Track D: Reasoning System (Actor-Critic architecture)
-- ✅ Track E: Deep Research Method (time range, clarification, citations)
-- ✅ Track F: XGBoost Phase C (ML ranking fully deployed)
+### 最近完成
+- ✅ Track D：Reasoning 系統（Actor-Critic 架構）
+- ✅ Track E：Deep Research Method（時間範圍、澄清、引用）
+- ✅ Track F：XGBoost Phase C（ML ranking 完整部署）
+- ✅ Tier 6 API 整合（Stock, Weather, Wikipedia）
 
-### Previously Completed
-- ✅ Track A: Analytics Infrastructure
-- ✅ Track B: BM25 Implementation
-- ✅ Track C: MMR Implementation
-- ✅ XGBoost Phase A: Infrastructure
-- ✅ XGBoost Phase B: Training pipeline
-
----
-
-## Current Work
-
-### 🔄 Performance Optimization - IN PROGRESS
-
-**Goal**: Optimize reasoning system latency and cost for production workloads.
-
-**Completed Foundation**:
-- Reasoning orchestrator with 4 agents (864 lines)
-- Deep research method with SSE streaming (667 lines)
-- Time range extraction (3-tier parsing, 367 lines)
-- Hallucination guard and citation verification
-- Source tier filtering (10 sources, 3 modes)
-- Console tracer and iteration logger
-
-**Current Optimization Targets**:
-1. **Latency Profiling**: Measure actual reasoning pipeline timing (Analyst/Critic/Writer)
-2. **Token Reduction**: Audit prompts for redundancy, target 20-30% reduction
-3. **Citation UX**: Test link rendering formats with real users
-4. **Clarification Flow**: A/B test question formats for clarity
-
-**Key Metrics**:
-- Reasoning iterations: Max 3 (actor-critic loop)
-- Source tiers: 1-2 (strict), 1-5 (discovery), 1+5 (monitor)
-- Agents: Analyst, Critic, Writer, Clarification
+### 先前完成
+- ✅ Track A：Analytics 基礎設施
+- ✅ Track B：BM25 實作
+- ✅ Track C：MMR 實作
+- ✅ XGBoost Phase A/B
 
 ---
 
-## Next Immediate Steps
+## 目前工作
 
-### Short-term (Current Sprint)
-- Profile reasoning system performance
-- Refine clarification flow UI/UX
-- Test hallucination guard effectiveness
-- Improve citation link rendering
+### 🔄 效能優化 - 進行中
 
-### Medium-term
-- Add progress indicators for long research queries
-- Implement user feedback loop for clarification
-- Optimize prompt templates for reduced tokens
-- A/B test reasoning vs standard search
+**目標**：優化 Reasoning 系統延遲與成本
 
-See `.claude/NEXT_STEPS.md` for detailed roadmap.
+**已完成基礎**：
+- Reasoning orchestrator with 4 agents
+- Deep research method with SSE 串流
+- 時間範圍抽取（3 層解析）
+- 幻覺防護與引用驗證
+- 來源分層過濾（10 來源、3 模式）
+- Console tracer 與 iteration logger
+- Tier 6 API（Gap Resolution）
+
+**目前優化目標**：
+1. **延遲分析**：測量實際 Reasoning 管道時間
+2. **Token 減少**：審核 prompt 冗餘，目標減少 20-30%
+3. **引用 UX**：測試連結渲染格式
+4. **澄清流程**：A/B 測試問題格式
+
+**關鍵指標**：
+- Reasoning 迭代次數：最多 3 次（Actor-Critic 迴圈）
+- 來源層級：1-2（strict）、1-5（discovery）、1+5（monitor）
+- Agents：Analyst、Critic、Writer、Clarification
 
 ---
 
-## References
+## 下一步
 
-- Analytics Dashboard: https://taiwan-news-ai-search.onrender.com/analytics
-- Neon Database: https://console.neon.tech
-- Render Service: https://dashboard.render.com
-- Implementation Plan: See `.claude/NEXT_STEPS.md` and `.claude/PROGRESS.md`
+### 短期（目前 Sprint）
+- 分析 Reasoning 系統效能
+- 精煉澄清流程 UI/UX
+- 測試幻覺防護有效性
+- 改善引用連結渲染
+
+### 中期
+- 為長研究查詢加入進度指示器
+- 實作使用者回饋迴圈
+- 優化 prompt 模板減少 token
+- A/B 測試 Reasoning vs 標準搜尋
+
+詳見 `.claude/NEXT_STEPS.md`
+
+---
+
+## 參考資源
+
+- Analytics 儀表板：https://taiwan-news-ai-search.onrender.com/analytics
+- Neon 資料庫：https://console.neon.tech
+- Render 服務：https://dashboard.render.com
+- 實作計畫：`.claude/NEXT_STEPS.md`、`.claude/PROGRESS.md`
+- 系統狀態機：`docs/architecture/state-machine-diagram.md`
+
+---
+
+*更新：2026-01-19*

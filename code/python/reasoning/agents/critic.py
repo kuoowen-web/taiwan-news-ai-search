@@ -56,20 +56,10 @@ class CriticAgent(BaseReasoningAgent):
 
         enable_structured = CONFIG.reasoning_params.get("features", {}).get("structured_critique", False)
 
-        # Extract argument_graph if available
-        argument_graph = None
-        if analyst_output and hasattr(analyst_output, 'argument_graph'):
-            argument_graph = analyst_output.argument_graph
-
-        # Extract knowledge_graph if available (Phase KG)
-        knowledge_graph = None
-        if analyst_output and hasattr(analyst_output, 'knowledge_graph'):
-            knowledge_graph = analyst_output.knowledge_graph
-
-        # Extract gap_resolutions if available (Stage 5)
-        gap_resolutions = None
-        if analyst_output and hasattr(analyst_output, 'gap_resolutions'):
-            gap_resolutions = analyst_output.gap_resolutions
+        # Extract optional fields from analyst_output using getattr with default
+        argument_graph = getattr(analyst_output, 'argument_graph', None) if analyst_output else None
+        knowledge_graph = getattr(analyst_output, 'knowledge_graph', None) if analyst_output else None
+        gap_resolutions = getattr(analyst_output, 'gap_resolutions', None) if analyst_output else None
 
         # Build the review prompt from PDF (pages 16-21)
         review_prompt = self.prompt_builder.build_review_prompt(
@@ -90,11 +80,14 @@ class CriticAgent(BaseReasoningAgent):
             response_schema = CriticReviewOutput
 
         # Call LLM with validation
-        result = await self.call_llm_validated(
+        result, retry_count, fallback_used = await self.call_llm_validated(
             prompt=review_prompt,
             response_schema=response_schema,
             level="high"
         )
+
+        # Log TypeAgent metrics for analytics
+        self.logger.debug(f"TypeAgent metrics: retries={retry_count}, fallback={fallback_used}")
 
         # Auto-escalate based on critical weaknesses (Phase 2)
         if hasattr(result, 'structured_weaknesses') and result.structured_weaknesses:

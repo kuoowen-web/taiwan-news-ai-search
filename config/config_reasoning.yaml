@@ -1,9 +1,9 @@
 reasoning:
   enabled: true
   max_iterations: 3
-  analyst_timeout: 240  # Doubled: 120 -> 240 for GPT-5.1
-  critic_timeout: 60    # Doubled: 30 -> 60 for GPT-5.1
-  writer_timeout: 180   # Doubled: 90 -> 180 for GPT-5.1
+  analyst_timeout: 300  # Increased for debugging
+  critic_timeout: 120   # Increased for debugging
+  writer_timeout: 300   # Increased for debugging
 
   # Feature flags for enhanced reasoning capabilities
   features:
@@ -11,8 +11,14 @@ reasoning:
     plan_and_write: true      # Phase 3: Plan-and-Write for long reports (2000+ words)
     argument_graphs: true     # Phase 2: Structured argument decomposition
     structured_critique: true # Phase 2: Structured weakness detection
-    knowledge_graph_generation: true  # Phase KG: Entity-Relationship Knowledge Graph
+    knowledge_graph_generation: false  # Phase KG: Entity-Relationship Knowledge Graph (per-request override via enable_kg param)
     gap_knowledge_enrichment: true    # Stage 5: Gap Detection with LLM Knowledge & Web Search
+
+  # TypeAgent configuration (structured LLM output with automatic validation)
+  typeagent:
+    enabled: true             # Set to true to enable TypeAgent
+    max_retries: 3            # Max retry attempts for validation errors
+    instructor_mode: "tool_call"  # instructor mode: "tool_call" or "json_mode"
 
   # Timezone for current time context (used in temporal queries)
   timezone: "Asia/Taipei"

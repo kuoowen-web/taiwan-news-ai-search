@@ -101,7 +101,6 @@ class GoogleSearchClient:
 
         Returns:
             List of tuples: (url, schema_json, title, site, [])
-            Format matches BingSearchClient for compatibility
         """
         if not self.api_key or not self.search_engine_id:
             logger.error("Google Search API not configured. Returning empty results.")

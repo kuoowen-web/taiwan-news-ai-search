@@ -210,47 +210,69 @@ def find_prompt(site, item_type, prompt_name):
     if (prompt_roots == []):
         logger.debug("Prompt roots not initialized, initializing now")
         init_prompts()
-    
+
     cached_values = get_cached_values(site, item_type, prompt_name)
     if cached_values is not None:
         logger.debug(f"Returning cached prompt for '{prompt_name}'")
         return cached_values
-    
+
     # First, try to find a Site element matching the site parameter
     site_element = None
     prompt_element = None
-    
+    found_matching_site = False
+
     logger.debug(f"Searching for site element with id='{site}'")
     for root_element in prompt_roots:
-        for site_element in root_element.findall(SITE_TAG):
-            if site_element.get("id") == site:
+        for se in root_element.findall(SITE_TAG):
+            if se.get("id") == site:
+                site_element = se
+                found_matching_site = True
                 break
-    
-    candidate_roots = []
-    if site_element is not None:
-        candidate_roots.append(site_element)
+        if found_matching_site:
+            break
+
+    candidate_sites = []
+    if found_matching_site and site_element is not None:
+        # Found a specific matching site
+        candidate_sites.append(site_element)
+        logger.debug(f"Using matched site: {site}")
     else:
-        candidate_roots = prompt_roots
-    
-    # If site element found, search for matching Type element within it
-    for candidate_root in candidate_roots:
-        # First check for prompts directly at root level
-        root_prompts = candidate_root.findall(PROMPT_TAG)
-        for pe in root_prompts:
+        # Fallback: collect all Site elements from all prompt roots
+        logger.debug(f"Site '{site}' not found, falling back to all sites")
+        for root_element in prompt_roots:
+            for se in root_element.findall(SITE_TAG):
+                candidate_sites.append(se)
+                logger.debug(f"Added fallback site: {se.get('id')}")
+
+    # Search within each candidate Site for the prompt
+    logger.debug(f"Searching for prompt '{prompt_name}' with item_type='{item_type}' in {len(candidate_sites)} sites")
+    for candidate_site in candidate_sites:
+        site_id = candidate_site.get('id')
+        # First check for prompts directly under Site (shouldn't exist, but check anyway)
+        site_prompts = candidate_site.findall(PROMPT_TAG)
+        for pe in site_prompts:
             if pe.get("ref") == prompt_name:
                 prompt_element = pe
+                logger.debug(f"Found prompt '{prompt_name}' directly under site '{site_id}'")
                 break
-        
-        # If not found at root, search within Type elements
+
+        # If not found, search within Item/Type elements under Site
         if prompt_element is None:
-            for child in candidate_root:
+            for child in candidate_site:
+                logger.debug(f"Checking child element: tag='{child.tag}', super_class_of({item_type}, {child.tag})={super_class_of(item_type, child.tag)}")
                 if (super_class_of(item_type, child.tag)):
                     children = child.findall(PROMPT_TAG)
-                    
+                    logger.debug(f"Found {len(children)} prompts under {child.tag}")
+
                     for pe in children:
                         if pe.get("ref") == prompt_name:
                             prompt_element = pe
+                            logger.debug(f"Found prompt '{prompt_name}' in site '{site_id}' under {child.tag}")
                             break
+
+        # If found, stop searching other sites
+        if prompt_element is not None:
+            break
     
     if prompt_element is not None:
         prompt_text = prompt_element.find(PROMPT_STRING_TAG).text

@@ -1,228 +1,159 @@
-# NLWeb Coding Rules and Conventions
+# 程式碼規範
 
-## Code Structure
+## 目錄結構
 
-### Python Backend Structure
-
-#### Directory Organization
+### Python 後端
 ```
 code/python/
-├── core/                  # Core system functionality
-│   ├── query_analysis/    # Query understanding modules
-│   ├── baseHandler.py     # Base handler class
-│   ├── config.py          # Configuration management
-│   ├── retriever.py       # Vector DB interface
+├── core/                  # 核心功能
+│   ├── query_analysis/    # 查詢分析模組
+│   ├── baseHandler.py     # 基礎 Handler
+│   ├── config.py          # 設定管理
+│   ├── retriever.py       # 向量資料庫介面
 │   └── ...
-├── methods/               # Specialized query handlers
-│   ├── generate_answer.py # RAG generation
-│   ├── compare_items.py   # Comparison logic
-│   └── ...
-├── data_loading/          # Data ingestion utilities
-├── llm_providers/         # LLM provider wrappers
-├── webserver/             # HTTP server
-└── llm_batch_handler.py   # Batch LLM processing
+├── methods/               # 特殊查詢處理器
+├── reasoning/             # 推論系統
+│   ├── orchestrator.py    # Actor-Critic 協調器
+│   └── agents/            # 4 個 Agent
+├── llm_providers/         # LLM 提供者包裝
+└── webserver/             # HTTP 伺服器
 ```
 
-#### Class Organization
-- **Single Responsibility**: Each class handles one primary concern
-- **Base Classes**: Abstract base classes define interfaces (e.g., `BaseHandler`)
-- **Inheritance**: Specialized handlers inherit from base classes
-- **Composition**: Complex functionality built through composition
-
-### JavaScript Frontend Structure
-
-#### Module Organization
+### JavaScript 前端
 ```
 static/
-├── fp-chat-interface.js   # Modern chat interface (main)
-├── managed-event-source.js # SSE handling
-├── conversation-manager.js # Conversation state
-├── json-renderer.js       # Content rendering
-├── type-renderers.js      # Type-specific renderers
-├── oauth-login.js         # Authentication
-└── utils.js              # Shared utilities
+├── news-search-prototype.html  # 主 UI
+├── managed-event-source.js     # SSE 處理
+├── conversation-manager.js     # 對話狀態
+└── utils.js                    # 共用工具
 ```
 
-#### Class Structure
-- **ES6 Classes**: All major components use ES6 class syntax
-- **Module Pattern**: Each file exports specific classes/functions
-- **Event-Driven**: Components communicate via events
-- **Separation of Concerns**: UI, state, and API logic separated
+---
 
-## Naming Conventions
+## 命名規範
 
-### Python Naming
+### Python
 
-#### Files and Modules
-- **snake_case**: `base_handler.py`, `query_analysis.py`
-- **Descriptive names**: File name matches primary class/function
+| 類型 | 格式 | 範例 |
+|------|------|------|
+| 檔案 | snake_case | `base_handler.py` |
+| 類別 | PascalCase | `NLWebHandler` |
+| 函式 | snake_case | `process_query()` |
+| 常數 | UPPER_SNAKE | `MAX_RETRIES` |
+| 私有 | _prefix | `_internal_method()` |
 
-#### Classes
-- **PascalCase**: `NLWebHandler`, `VectorDBClient`, `AppConfig`
-- **Descriptive**: Class name indicates purpose
-- **Suffix patterns**:
-  - `Handler` - Request handlers
-  - `Client` - External service clients
-  - `Manager` - State/resource managers
+**類別後綴**：
+- `Handler`：請求處理器
+- `Client`：外部服務客戶端
+- `Manager`：狀態/資源管理器
+- `Agent`：推論系統 Agent
 
-#### Functions and Methods
-- **snake_case**: `process_query()`, `get_embeddings()`
-- **Verb prefixes**: `get_`, `set_`, `process_`, `handle_`
-- **Async prefix**: `async_` for async functions
-- **Private prefix**: `_` for internal methods
+### JavaScript
 
-#### Variables
-- **snake_case**: `query_text`, `result_count`
-- **Constants**: `UPPERCASE_WITH_UNDERSCORES`
-- **Configuration**: Loaded into class attributes
+| 類型 | 格式 | 範例 |
+|------|------|------|
+| 檔案 | kebab-case | `chat-interface.js` |
+| 類別 | PascalCase | `ConversationManager` |
+| 函式 | camelCase | `handleStreamingData()` |
+| 常數 | UPPER_SNAKE | `API_ENDPOINT` |
 
-### JavaScript Naming
+---
 
-#### Files
-- **kebab-case**: `chat-interface.js`, `managed-event-source.js`
-- **Descriptive**: File name indicates component/module
+## 錯誤處理
 
-#### Classes
-- **PascalCase**: `ModernChatInterface`, `ConversationManager`
-- **Descriptive**: Clear indication of purpose
-
-#### Methods and Functions
-- **camelCase**: `sendMessage()`, `handleStreamingData()`
-- **Event handlers**: `on` prefix (e.g., `onMessage`)
-- **Private methods**: `_` prefix (e.g., `_processData`)
-
-#### Variables
-- **camelCase**: `currentQuery`, `isStreaming`
-- **Constants**: `UPPERCASE_WITH_UNDERSCORES`
-- **DOM elements**: Descriptive names (e.g., `sendButton`, `messagesContainer`)
-
-## Edge-Case Rules
-
-### Query Processing
-1. **Empty Queries**: Return helpful message, don't process
-2. **Malformed JSON**: Log error, return error message to user
-3. **Missing Parameters**: Use sensible defaults
-4. **Large Queries**: Truncate at reasonable length (e.g., 1000 chars)
-5. **Invalid Sites**: Default to 'all' sites
-
-### Error Handling
-
-#### Python Backend
+### Python
 ```python
-# Always catch specific exceptions
+# 捕捉特定例外
 try:
     result = await vector_db.search(query)
 except ConnectionError as e:
-    logger.error(f"Vector DB connection failed: {e}")
-    # Return partial results or fallback
+    logger.error(f"Vector DB 連線失敗: {e}")
+    # 回傳部分結果或 fallback
 except TimeoutError as e:
-    logger.warning(f"Vector DB timeout: {e}")
-    # Use cached results if available
+    logger.warning(f"Vector DB 超時: {e}")
+    # 使用快取結果（如有）
 ```
 
-#### JavaScript Frontend
+### JavaScript
 ```javascript
-// Always provide user feedback
 try {
     const response = await fetch(url);
     if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error(`HTTP 錯誤: ${response.status}`);
     }
 } catch (error) {
-    console.error('API call failed:', error);
-    this.showErrorMessage('Unable to process request. Please try again.');
+    console.error('API 呼叫失敗:', error);
+    this.showErrorMessage('無法處理請求，請重試');
 }
 ```
 
-### Streaming Responses
-1. **Connection Loss**: Implement retry with exponential backoff
-2. **Partial Data**: Buffer and validate JSON before parsing
-3. **Timeout**: Close stream after reasonable time (e.g., 5 minutes)
-4. **Memory Management**: Clear old messages/results periodically
+---
 
-### Authentication
-1. **Token Expiry**: Refresh tokens automatically
-2. **Invalid Tokens**: Clear and redirect to login
-3. **Network Errors**: Cache auth state locally
-4. **Multiple Tabs**: Sync auth state across tabs
+## 邊界情況處理
 
-### Data Validation
+| 情況 | 處理方式 |
+|------|----------|
+| 空查詢 | 回傳提示訊息，不處理 |
+| JSON 格式錯誤 | 記錄錯誤，回傳錯誤訊息 |
+| 缺少參數 | 使用合理預設值 |
+| 查詢過長 | 截斷至合理長度（1000 字元） |
+| 無效網站 | 預設為 'all' |
 
-#### Input Sanitization
-```javascript
-// Always escape HTML in user content
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-```
+---
 
-#### Result Validation
-```python
-# Validate result structure
-def validate_result(result):
-    required_fields = ['url', 'name', 'site']
-    if not all(field in result for field in required_fields):
-        logger.warning(f"Invalid result structure: {result}")
-        return None
-    return result
-```
+## 串流回應
 
-## Code Quality Rules
+1. **連線中斷**：指數退避重試
+2. **部分資料**：緩衝並驗證 JSON
+3. **超時**：合理時間後關閉（5 分鐘）
+4. **記憶體管理**：定期清理舊訊息
 
-### General Principles
-1. **DRY (Don't Repeat Yourself)**: Extract common functionality
-2. **SOLID Principles**: Especially Single Responsibility
-3. **Fail Fast**: Validate inputs early
-4. **Explicit is Better**: Clear variable names over brevity
+---
 
-### Python-Specific
-1. **Type Hints**: Use for function signatures
-2. **Docstrings**: Required for public methods
-3. **Async/Await**: Prefer over callbacks
-4. **Context Managers**: Use for resource management
+## 安全規範
 
-### JavaScript-Specific
-1. **Strict Mode**: Always use 'use strict'
-2. **Const by Default**: Use const unless reassignment needed
-3. **Arrow Functions**: For callbacks and short functions
-4. **Template Literals**: For string interpolation
+| 項目 | 做法 |
+|------|------|
+| 輸入驗證 | 驗證所有使用者輸入 |
+| SQL 注入 | 使用參數化查詢 |
+| XSS 防護 | 轉義 HTML 內容 |
+| CORS | 正確設定 production 環境 |
+| 認證 | 每個請求驗證 token |
+| 日誌 | 不記錄密碼、token、PII |
 
-### Testing Conventions
-1. **Unit Tests**: Test individual functions/methods
-2. **Integration Tests**: Test API endpoints
-3. **Mock External Services**: Don't rely on external APIs in tests
-4. **Test Edge Cases**: Empty inputs, large inputs, invalid data
+---
 
-### Configuration Management
-1. **Environment Variables**: For secrets and deployment-specific values
-2. **YAML Files**: For structured configuration
-3. **Defaults**: Always provide sensible defaults
-4. **Validation**: Validate configuration on startup
+## 效能規範
 
-### Logging
-1. **Structured Logging**: Use consistent format
-2. **Log Levels**: DEBUG, INFO, WARNING, ERROR, CRITICAL
-3. **Context**: Include relevant context (user_id, query_id)
-4. **No Sensitive Data**: Never log passwords, tokens, or PII
+| 項目 | 做法 |
+|------|------|
+| 快取 | 快取昂貴操作 |
+| 分頁 | 限制結果集大小 |
+| 延遲載入 | 按需載入資料 |
+| 連線池 | 重用資料庫連線 |
+| 並行處理 | 使用 asyncio 處理 I/O |
 
-### Security
-1. **Input Validation**: Always validate user input
-2. **SQL Injection**: Use parameterized queries
-3. **XSS Prevention**: Escape HTML content
-4. **CORS**: Configure appropriately for production
-5. **Authentication**: Verify tokens on every request
+---
 
-### Performance
-1. **Caching**: Cache expensive operations
-2. **Pagination**: Limit result sets
-3. **Lazy Loading**: Load data as needed
-4. **Connection Pooling**: Reuse database connections
-5. **Parallel Processing**: Use asyncio for I/O operations
+## 程式碼品質
 
-### Documentation
-1. **README**: Keep updated with setup instructions
-2. **API Docs**: Document all endpoints
-3. **Code Comments**: Explain "why", not "what"
-4. **Examples**: Provide usage examples
+1. **DRY**：提取共用功能
+2. **SOLID**：單一職責原則
+3. **Fail Fast**：早期驗證輸入
+4. **明確優於簡短**：清晰變數名
+
+### Python 特定
+- 使用型別提示
+- 公開方法需有 docstring
+- 優先使用 async/await
+- 使用 context manager 管理資源
+
+### JavaScript 特定
+- 使用 'use strict'
+- 預設使用 const
+- 箭頭函式用於回呼
+- 模板字串用於插值
+
+---
+
+*更新：2026-01-19*

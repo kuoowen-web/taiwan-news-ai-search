@@ -43,15 +43,33 @@ class AnalystPromptBuilder:
             Complete system prompt string
         """
         time_range = ""
+        time_binding_constraint = ""
         if temporal_context:
-            time_range = f"\n- Time Range: {temporal_context.get('start', 'N/A')} to {temporal_context.get('end', 'N/A')}"
+            start_date = temporal_context.get('start', 'N/A')
+            end_date = temporal_context.get('end', 'N/A')
+            time_range = f"\n- Time Range: {start_date} to {end_date}"
+
+            # Add BINDING constraint if user explicitly selected time range via clarification
+            if temporal_context.get('user_selected'):
+                user_choice = temporal_context.get('user_choice_label', '')
+                time_binding_constraint = f"""
+
+⚠️ **強制時間約束 (BINDING TIME CONSTRAINT)**：
+用戶已明確選擇時間範圍：「{user_choice}」({start_date} 至 {end_date})
+
+**CRITICAL**：
+1. 你**必須**嚴格遵守此時間範圍，**絕對不能**重新詮釋用戶的選擇
+2. 禁止說「今天不是明確指今天，而是指最近」之類的重新詮釋
+3. 只分析此時間範圍內的資料，超出範圍的資料標註為「超出指定時間範圍」
+4. 如果指定範圍內無相關資料，直接回報「指定時間範圍內無相關資訊」
+"""
 
         # Stage 5: Add mandatory pre-check if gap enrichment is enabled
         mandatory_precheck = ""
         if enable_gap_enrichment and enable_web_search:
             mandatory_precheck = self._build_mandatory_precheck(query)
 
-        prompt = self._build_base_research_prompt(query, mode, time_range, formatted_context, mandatory_precheck)
+        prompt = self._build_base_research_prompt(query, mode, time_range, formatted_context, mandatory_precheck, time_binding_constraint)
 
         # Add argument graph instructions if enabled (Phase 2)
         if enable_argument_graph:
@@ -271,7 +289,8 @@ Web Search 狀態：**已啟用**
         mode: str,
         time_range: str,
         formatted_context: str,
-        mandatory_precheck: str
+        mandatory_precheck: str,
+        time_binding_constraint: str = ""
     ) -> str:
         """Build base research prompt."""
         return f"""你是一個新聞情報分析系統中的 **首席分析師 (Lead Analyst)**。
@@ -282,7 +301,7 @@ Web Search 狀態：**已啟用**
 你的輸出將會被另一個 **評論家 Agent (Critic)** 進行嚴格審查。
 如果你的推論缺乏證據、違反來源模式設定，或包含邏輯謬誤，你的報告將被退回。
 請務必在生成草稿前進行嚴格的自我檢查。
-
+{time_binding_constraint}
 {mandatory_precheck}---
 
 ## 1. 動態搜尋配置 (Search Configuration)

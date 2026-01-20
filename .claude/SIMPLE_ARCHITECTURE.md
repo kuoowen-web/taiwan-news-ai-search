@@ -1,47 +1,45 @@
-# Simple Architecture Design
+# Chat 架構設計
 
-## Core Principle
-Achieve ≤105% performance for the 80% case (1 human + 1 NLWeb) while supporting multi-participant conversations.
+## 核心原則
+針對 80% 情況（1 人類 + 1 NLWeb）達成 ≤105% 效能，同時支援多參與者對話。
 
-## Minimal Component Set
+---
+
+## 最小元件集
 
 ### 1. ChatWebSocketHandler
-- **Purpose**: Manage WebSocket connections and message routing
-- **Location**: `chat/websocket.py`
-- **Responsibilities**:
-  - WebSocket lifecycle (connect, disconnect, reconnect)
-  - Message validation and routing
-  - Heartbeat/ping-pong for connection health
-  - Auth token validation on connection
+- **位置**：`chat/websocket.py`
+- **職責**：
+  - WebSocket 生命週期（連線、斷線、重連）
+  - 訊息驗證與路由
+  - Heartbeat/ping-pong 連線健康檢查
+  - 認證 token 驗證
 
 ### 2. ConversationManager
-- **Purpose**: Orchestrate conversations and message flow
-- **Location**: `chat/conversation.py`
-- **Responsibilities**:
-  - Message sequencing (atomic ID assignment)
-  - Participant management
-  - Queue management and backpressure
-  - Message broadcast to all participants
+- **位置**：`chat/conversation.py`
+- **職責**：
+  - 訊息序號分配（原子操作）
+  - 參與者管理
+  - 佇列管理與背壓控制
+  - 訊息廣播
 
-### 3. NLWebParticipant (Wrapper)
-- **Purpose**: Wrap existing NLWebHandler without modification
-- **Location**: `chat/participants.py`
-- **Approach**:
+### 3. NLWebParticipant（包裝器）
+- **位置**：`chat/participants.py`
+- **設計**：
   ```python
   class NLWebParticipant:
       def __init__(self, nlweb_handler):
-          self.handler = nlweb_handler  # Reuse existing instance
-      
+          self.handler = nlweb_handler  # 重用現有實例
+
       async def process_message(self, message, context):
-          # Build context from recent messages
-          # Call handler.ask() with context
-          # Stream response back as chat messages
+          # 從最近訊息建立上下文
+          # 呼叫 handler.ask()
+          # 串流回應作為 chat 訊息
   ```
 
-### 4. ChatStorage (Interface)
-- **Purpose**: Abstract storage operations
-- **Location**: `chat/storage.py`
-- **Interface**:
+### 4. ChatStorage（介面）
+- **位置**：`chat/storage.py`
+- **介面**：
   ```python
   class ChatStorage(ABC):
       async def save_message(self, message: ChatMessage) -> int
@@ -50,14 +48,15 @@ Achieve ≤105% performance for the 80% case (1 human + 1 NLWeb) while supportin
   ```
 
 ### 5. MemoryCache
-- **Purpose**: Optimize performance for active conversations
-- **Location**: `chat/cache.py`
-- **Features**:
-  - LRU cache for recent messages
-  - In-memory sequence ID tracking
-  - Write-through to storage
+- **位置**：`chat/cache.py`
+- **功能**：
+  - LRU 快取最近訊息
+  - 記憶體內序號追蹤
+  - Write-through 至儲存層
 
-## Component Interactions
+---
+
+## 元件互動
 
 ```
 Human → WebSocket → ChatWebSocketHandler
@@ -67,97 +66,51 @@ Human → WebSocket → ChatWebSocketHandler
               MemoryCache    NLWebParticipant
                    ↓               ↓
               ChatStorage    NLWebHandler
-                              (unchanged)
+                              (不修改)
 ```
 
-## Performance Optimizations
+---
 
-### For 80% Case (1 Human + 1 NLWeb)
-1. **Direct routing**: Skip broadcast logic when only 2 participants
-2. **Cache-first**: Recent messages stay in memory
-3. **Minimal context**: Only include last 5 human messages
-4. **Stream early**: Start streaming AI response immediately
+## 效能優化
 
-### Memory Storage for Development
-- Start with `MemoryStorage` implementation
-- No external dependencies
-- Perfect for development and testing
-- Easy migration to persistent storage later
+### 80% 情況（1 人類 + 1 NLWeb）
+1. **直接路由**：僅 2 參與者時跳過廣播邏輯
+2. **快取優先**：最近訊息保留於記憶體
+3. **最小上下文**：僅包含最近 5 則人類訊息
+4. **早期串流**：立即開始串流 AI 回應
 
-## Integration Points
+---
 
-### 1. Authentication Middleware
-```python
-# Reuse existing auth
-from webserver.middleware import authenticate_request
+## 對話模式
 
-class ChatWebSocketHandler:
-    async def websocket_handler(self, request):
-        # Validate auth token from existing middleware
-        user = await authenticate_request(request)
-```
+| 模式 | 條件 | 特性 |
+|------|------|------|
+| SINGLE | 1 人類 + 1 AI | 快速回應（100ms timeout） |
+| MULTI | 2+ 人類 或 3+ 總人數 | 等待其他輸入（2000ms timeout） |
 
-### 2. NLWebHandler Reuse
-```python
-# Zero modification to NLWebHandler
-nlweb = request.app['nlweb_handler']
-participant = NLWebParticipant(nlweb)
-```
+---
 
-### 3. Configuration
-```yaml
-# Extends existing config_nlweb.yaml
-chat:
-  storage:
-    backend: "memory"
-  context:
-    human_messages: 5
-```
+## 訊息流程範例
 
-## Message Flow Example
+### 單人 + NLWeb（80% 情況）
+1. 人類發送：「今天天氣如何？」
+2. Server 分配 sequence_id: 1
+3. 直接路由至 NLWebParticipant（無廣播）
+4. NLWeb 以最小上下文處理
+5. 回應串流回人類
+6. 總延遲：約為現有 /ask 的 102%
 
-### Single Human + NLWeb (80% case)
-1. Human sends: "What's the weather?"
-2. Server assigns sequence_id: 1
-3. Direct route to NLWebParticipant (no broadcast)
-4. NLWeb processes with minimal context
-5. Response streams back to human
-6. Total latency: ~102% of current /ask
+---
 
-### Multi-Human Case (20%)
-1. Alice sends: "What should we order for lunch?"
-2. Server assigns sequence_id: 42
-3. Broadcast to Bob, Charlie, and NLWeb
-4. NLWeb might respond with suggestions
-5. All humans see the response
-6. Efficient O(N) broadcast
+## 錯誤處理
 
-## Key Design Decisions
+| 錯誤碼 | 說明 |
+|--------|------|
+| 429 | 佇列已滿 |
+| 401 | 認證失敗 |
+| 400 | 訊息格式錯誤 |
+| 500 | 儲存失敗（含重試） |
 
-1. **No modification to NLWebHandler** - Wrap, don't change
-2. **Memory-first storage** - Start simple, optimize later
-3. **Single server** - No distributed complexity
-4. **Reuse everything** - Auth, config, monitoring
-5. **Stream early** - Don't wait for full responses
-6. **Cache aggressively** - Most messages are recent
+---
 
-## Metrics Collection
-
-Reuse existing metrics patterns:
-```python
-from webserver.metrics import track_metric
-
-class ConversationManager:
-    async def add_message(self, message):
-        start = time.time()
-        # ... process message
-        track_metric('chat.message.latency', time.time() - start)
-```
-
-## Error Handling
-
-Simple, clear errors:
-- **429 Too Many Requests**: Queue full
-- **401 Unauthorized**: Invalid auth token
-- **400 Bad Request**: Invalid message format
-- **500 Internal Error**: Storage failure (with retry)
+*更新：2026-01-19*

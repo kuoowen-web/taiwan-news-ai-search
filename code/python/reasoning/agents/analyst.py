@@ -93,11 +93,14 @@ class AnalystAgent(BaseReasoningAgent):
             self.logger.info("Using basic AnalystResearchOutput schema")
 
         # Call LLM with validation
-        result = await self.call_llm_validated(
+        result, retry_count, fallback_used = await self.call_llm_validated(
             prompt=system_prompt,
             response_schema=response_schema,
             level="high"
         )
+
+        # Log TypeAgent metrics for analytics
+        self.logger.debug(f"TypeAgent metrics: retries={retry_count}, fallback={fallback_used}")
 
         # Validate argument graph if present
         if hasattr(result, 'argument_graph') and result.argument_graph:
@@ -137,11 +140,14 @@ class AnalystAgent(BaseReasoningAgent):
         )
 
         # Call LLM with validation
-        result = await self.call_llm_validated(
+        result, retry_count, fallback_used = await self.call_llm_validated(
             prompt=revision_prompt,
             response_schema=AnalystResearchOutput,
             level="high"
         )
+
+        # Log TypeAgent metrics for analytics
+        self.logger.debug(f"TypeAgent metrics (revise): retries={retry_count}, fallback={fallback_used}")
 
         return result
 

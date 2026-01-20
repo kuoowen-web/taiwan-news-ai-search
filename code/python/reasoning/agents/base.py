@@ -1,14 +1,164 @@
 """
 Base class for reasoning agents providing common LLM interaction patterns.
+
+Includes TypeAgent integration for structured LLM output with automatic retry
+and validation using the instructor library.
 """
 
 import asyncio
-from typing import Dict, Any, Optional, Type
+from typing import Dict, Any, Optional, Type, Tuple
 from pydantic import BaseModel, ValidationError
 from misc.logger.logging_config_helper import get_configured_logger
 from core.llm import ask_llm
+from core.config import CONFIG
 from core.prompts import find_prompt, fill_prompt
 from core.utils.json_repair_utils import safe_parse_llm_json
+
+# TypeAgent: instructor library for structured LLM output
+_instructor_available = False
+_instructor_client = None
+_instructor_client_lock = asyncio.Lock()
+
+try:
+    import instructor
+    from instructor import Retrying
+    from openai import AsyncOpenAI
+    _instructor_available = True
+except ImportError:
+    pass
+
+
+async def _get_instructor_client():
+    """
+    Lazily initialize and return the instructor-wrapped OpenAI client.
+    Thread-safe singleton pattern.
+    """
+    global _instructor_client
+    logger = get_configured_logger("typeagent")
+
+    if not _instructor_available:
+        logger.error("TypeAgent: instructor library not imported")
+        return None
+
+    async with _instructor_client_lock:
+        if _instructor_client is None:
+            # Get API key from config
+            provider_config = CONFIG.llm_endpoints.get("openai")
+            if not provider_config:
+                logger.error("TypeAgent: 'openai' endpoint not found in config_llm.yaml")
+                logger.error(f"TypeAgent: Available endpoints: {list(CONFIG.llm_endpoints.keys())}")
+                return None
+            if not provider_config.api_key:
+                import os
+                env_key = os.environ.get("OPENAI_API_KEY")
+                logger.error(
+                    "TypeAgent: OpenAI API key not set. "
+                    f"provider_config.api_key={repr(provider_config.api_key)}, "
+                    f"os.environ OPENAI_API_KEY={'set ('+env_key[:8]+'...)' if env_key else 'NOT SET'}"
+                )
+                return None
+
+            logger.info(f"TypeAgent: Initializing instructor client with OpenAI (key starts with: {provider_config.api_key[:8]}...)")
+            # Create instructor-wrapped async client
+            base_client = AsyncOpenAI(api_key=provider_config.api_key)
+            _instructor_client = instructor.from_openai(base_client)
+
+    return _instructor_client
+
+
+async def generate_structured(
+    prompt: str,
+    response_model: Type[BaseModel],
+    max_retries: int = 3,
+    model: Optional[str] = None,
+    timeout: int = 120,
+    max_tokens: int = 16384
+) -> Tuple[BaseModel, int, bool]:
+    """
+    TypeAgent core function: Generate structured LLM output with automatic validation.
+
+    Uses instructor library to:
+    - Automatically retry on validation errors
+    - Feed error messages back to LLM for correction
+    - Guarantee return of valid Pydantic object
+
+    Args:
+        prompt: The text prompt to send to the LLM
+        response_model: Pydantic model class for validation
+        max_retries: Maximum retry attempts (instructor handles internally)
+        model: Model ID to use (defaults to config high model)
+        timeout: Request timeout in seconds
+        max_tokens: Maximum tokens in response (default: 16384, same as legacy method)
+
+    Returns:
+        Tuple of (validated_model, retry_count, fallback_used)
+        - validated_model: The validated Pydantic model instance
+        - retry_count: Number of retries needed (0 if first attempt succeeded)
+        - fallback_used: Always False when using instructor
+
+    Raises:
+        ValueError: If instructor is not available or client initialization fails
+        ValidationError: If max retries exceeded
+        TimeoutError: If request times out
+    """
+    logger = get_configured_logger("typeagent")
+
+    if not _instructor_available:
+        raise ValueError("instructor library not available. Install with: pip install instructor")
+
+    client = await _get_instructor_client()
+    if client is None:
+        raise ValueError("Failed to initialize instructor client. Check OpenAI API key configuration.")
+
+    # Determine model
+    if model is None:
+        provider_config = CONFIG.llm_endpoints.get("openai")
+        if provider_config and provider_config.models:
+            model = provider_config.models.high
+        else:
+            model = "gpt-4o"  # Fallback default
+
+    logger.info(f"TypeAgent: Generating structured output with {response_model.__name__}")
+    logger.debug(f"TypeAgent: Using model {model}, max_retries={max_retries}")
+
+    # Track retry count using a mutable container
+    retry_state = {"count": 0}
+
+    def on_retry(retry_info: Retrying) -> None:
+        """Callback to track retry attempts."""
+        retry_state["count"] += 1
+        logger.warning(
+            f"TypeAgent: Retry #{retry_state['count']} for {response_model.__name__} - "
+            f"Error: {retry_info.exception}"
+        )
+
+    try:
+        # Use instructor's automatic retry and validation with callback
+        result = await asyncio.wait_for(
+            client.chat.completions.create(
+                model=model,
+                response_model=response_model,
+                messages=[{"role": "user", "content": prompt}],
+                max_retries=Retrying(max_retries=max_retries, on_retry=on_retry),
+                max_tokens=max_tokens  # Critical: limit response length to prevent timeout
+            ),
+            timeout=timeout
+        )
+
+        logger.info(f"TypeAgent: Successfully generated {response_model.__name__} (retries: {retry_state['count']})")
+        return result, retry_state["count"], False
+
+    except asyncio.TimeoutError:
+        logger.error(f"TypeAgent: Request timed out after {timeout}s")
+        raise TimeoutError(f"TypeAgent request timed out after {timeout} seconds")
+
+    except ValidationError as e:
+        logger.error(f"TypeAgent: Validation failed after {max_retries} retries: {e}")
+        raise
+
+    except Exception as e:
+        logger.error(f"TypeAgent: Unexpected error: {type(e).__name__}: {e}")
+        raise
 
 
 class BaseReasoningAgent:
@@ -114,18 +264,40 @@ class BaseReasoningAgent:
         # Should not reach here
         raise ValueError(f"Failed to get response for {prompt_name}")
 
+    def _is_typeagent_enabled(self) -> bool:
+        """Check if TypeAgent is enabled in configuration."""
+        typeagent_config = CONFIG.reasoning_params.get("typeagent", {})
+        config_enabled = typeagent_config.get("enabled", False)
+
+        self.logger.info(
+            f"{self.agent_name} TypeAgent check: config_enabled={config_enabled}, "
+            f"instructor_available={_instructor_available}"
+        )
+
+        if config_enabled and not _instructor_available:
+            self.logger.warning(
+                f"{self.agent_name} TypeAgent is enabled in config but instructor library is not available. "
+                "Install with: pip install instructor"
+            )
+            return False
+
+        return config_enabled and _instructor_available
+
     async def call_llm_validated(
         self,
         prompt: str,
         response_schema: Type[BaseModel],
         level: str = "high"
-    ) -> BaseModel:
+    ) -> Tuple[BaseModel, int, bool]:
         """
         Call LLM with Pydantic validation.
 
         This method calls the LLM with a direct prompt string (not a template)
-        and validates the response against a Pydantic schema. It includes
-        retry logic with exponential backoff for validation failures.
+        and validates the response against a Pydantic schema.
+
+        When TypeAgent is enabled, uses instructor library for automatic
+        validation and retry. Falls back to legacy method if TypeAgent fails
+        or is disabled.
 
         Args:
             prompt: Direct prompt string (not template name)
@@ -133,17 +305,80 @@ class BaseReasoningAgent:
             level: LLM quality level ("high" or "low")
 
         Returns:
-            Validated Pydantic model instance
+            Tuple of (validated_model, retry_count, fallback_used)
+            - validated_model: The validated Pydantic model instance
+            - retry_count: Number of retries needed (for analytics)
+            - fallback_used: True if legacy method was used
 
         Raises:
             ValidationError: If max retries exceeded
             TimeoutError: If LLM call exceeds timeout
         """
+        # Try TypeAgent first if enabled
+        if self._is_typeagent_enabled():
+            try:
+                self.logger.info(
+                    f"{self.agent_name} using TypeAgent for {response_schema.__name__}"
+                )
+
+                # Get model from config
+                typeagent_config = CONFIG.reasoning_params.get("typeagent", {})
+                max_retries = typeagent_config.get("max_retries", self.max_retries)
+
+                result, retry_count, _ = await generate_structured(
+                    prompt=prompt,
+                    response_model=response_schema,
+                    max_retries=max_retries,
+                    timeout=self.timeout
+                )
+
+                self.logger.info(
+                    f"{self.agent_name} TypeAgent success for {response_schema.__name__} "
+                    f"(retries: {retry_count})"
+                )
+                return result, retry_count, False
+
+            except Exception as e:
+                self.logger.warning(
+                    f"{self.agent_name} TypeAgent failed, falling back to legacy: {e}"
+                )
+                # Fall through to legacy method
+
+        # Legacy method (fallback or TypeAgent disabled)
+        return await self._legacy_call_llm_validated(prompt, response_schema, level)
+
+    async def _legacy_call_llm_validated(
+        self,
+        prompt: str,
+        response_schema: Type[BaseModel],
+        level: str = "high"
+    ) -> Tuple[BaseModel, int, bool]:
+        """
+        Legacy LLM call with Pydantic validation (fallback method).
+
+        This is the original implementation with manual retry logic,
+        JSON repair, and exponential backoff.
+
+        Args:
+            prompt: Direct prompt string (not template name)
+            response_schema: Pydantic model class for validation
+            level: LLM quality level ("high" or "low")
+
+        Returns:
+            Tuple of (validated_model, retry_count, fallback_used)
+
+        Raises:
+            ValidationError: If max retries exceeded
+            TimeoutError: If LLM call exceeds timeout
+        """
+        retry_count = 0
+        response = None
+
         for attempt in range(self.max_retries):
             try:
                 # Call LLM
                 self.logger.info(
-                    f"{self.agent_name} calling LLM with {response_schema.__name__} "
+                    f"{self.agent_name} [legacy] calling LLM with {response_schema.__name__} "
                     f"validation (attempt {attempt + 1}/{self.max_retries})"
                 )
 
@@ -161,7 +396,7 @@ class BaseReasoningAgent:
 
                 # Log raw response for debugging
                 self.logger.info(f"{self.agent_name} raw LLM response type: {type(response)}")
-                self.logger.info(f"{self.agent_name} raw LLM response: {response}")
+                self.logger.debug(f"{self.agent_name} raw LLM response: {response}")
 
                 # Check if response is empty (indicates LLM call failure)
                 if not response or (isinstance(response, dict) and len(response) == 0):
@@ -189,13 +424,14 @@ class BaseReasoningAgent:
                     raise ValueError(f"Unexpected response type: {type(response)}")
 
                 self.logger.info(
-                    f"{self.agent_name} response validated against {response_schema.__name__}"
+                    f"{self.agent_name} [legacy] response validated against {response_schema.__name__}"
                 )
-                return validated
+                return validated, retry_count, True  # fallback_used = True
 
             except ValidationError as e:
+                retry_count = attempt + 1
                 self.logger.error(
-                    f"{self.agent_name} validation failed "
+                    f"{self.agent_name} [legacy] validation failed "
                     f"(attempt {attempt+1}/{self.max_retries}): {e}"
                 )
                 self.logger.error(f"Failed response content: {response}")
@@ -208,16 +444,17 @@ class BaseReasoningAgent:
                         try:
                             validated = response_schema.model_validate(repaired)
                             self.logger.info(
-                                f"{self.agent_name} validation successful after JSON repair"
+                                f"{self.agent_name} [legacy] validation successful after JSON repair"
                             )
-                            return validated
+                            return validated, retry_count, True
+
                         except ValidationError as repair_error:
                             self.logger.debug(f"Validation still failed after repair: {repair_error}")
 
                 if attempt == self.max_retries - 1:
                     # Last attempt - raise error
                     self.logger.error(
-                        f"{self.agent_name} max retries exceeded for {response_schema.__name__}"
+                        f"{self.agent_name} [legacy] max retries exceeded for {response_schema.__name__}"
                     )
                     raise
                 # Exponential backoff
@@ -225,13 +462,13 @@ class BaseReasoningAgent:
 
             except asyncio.TimeoutError:
                 self.logger.error(
-                    f"{self.agent_name} LLM call timed out after {self.timeout}s"
+                    f"{self.agent_name} [legacy] LLM call timed out after {self.timeout}s"
                 )
                 raise TimeoutError(f"LLM call timed out after {self.timeout} seconds")
 
             except Exception as e:
                 # Unexpected error
-                self.logger.error(f"{self.agent_name} unexpected error: {e}", exc_info=True)
+                self.logger.error(f"{self.agent_name} [legacy] unexpected error: {e}", exc_info=True)
                 raise
 
         # Should not reach here
