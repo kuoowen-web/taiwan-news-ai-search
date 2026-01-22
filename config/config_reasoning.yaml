@@ -13,6 +13,7 @@ reasoning:
     structured_critique: true # Phase 2: Structured weakness detection
     knowledge_graph_generation: false  # Phase KG: Entity-Relationship Knowledge Graph (per-request override via enable_kg param)
     gap_knowledge_enrichment: true    # Stage 5: Gap Detection with LLM Knowledge & Web Search
+    cov_lite_enabled: true    # Phase 2 CoV: Chain of Verification for fact-checking claims
 
   # TypeAgent configuration (structured LLM output with automatic validation)
   typeagent:

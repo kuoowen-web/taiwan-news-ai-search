@@ -33,17 +33,20 @@ TSV File → Ingestion Engine → Quality Gate → Adaptive Chunking → Dual St
 
 ```python
 class SourceTier(IntEnum):
-    TIER_1_AUTHORITATIVE = 1  # threshold: 0.95
-    TIER_2_VERIFIED = 2       # threshold: 0.90
-    TIER_3_STANDARD = 3       # threshold: 0.83 (default for news)
-    TIER_4_AGGREGATOR = 4     # threshold: 0.82
+    TIER_1_AUTHORITATIVE = 1  # threshold: 0.90（高閾值 = 更細碎分塊）
+    TIER_2_VERIFIED = 2       # threshold: 0.85
+    TIER_3_STANDARD = 3       # threshold: 0.80 (default for news)
+    TIER_4_AGGREGATOR = 4     # threshold: 0.75（低閾值 = 更大塊分塊）
 
 class SourceManager:
     def get_tier(source_id: str) -> SourceTier
     def get_chunking_threshold(source_id: str) -> float
 ```
 
-**設計決策**：不做動態權重調整，只維護 source → tier 映射。
+**設計決策**：
+- 不做動態權重調整，只維護 source → tier 映射
+- 閾值範圍調整為 0.75-0.90（原 0.82-0.95 差異太小，效果不明顯）
+- **預設閾值將由 POC 驗證後決定**（暫定 0.80）
 
 ---
 
@@ -79,15 +82,16 @@ class CanonicalDataModel:
 ### 3. Quality Gate (Enhanced)
 **File**: `code/python/indexing/quality_gate.py`
 
-**檢查項目**（共 5 項）：
+**檢查項目**（共 4 項）：
 
 | 檢查項目 | 條件 | 失敗處理 |
 |----------|------|----------|
 | 內容長度 | `article_body` > 50 字元 | Buffer |
 | URL 重複 | 查 Qdrant 現有 | Skip（不進 buffer） |
 | Headline 存在 | `headline` 非空 | Buffer |
-| **內容品質** | 非純 HTML/script/廣告文字 | Buffer |
-| **語言檢查** | 主要語言為中文（zh）| Buffer |
+| **內容品質** | 非純 HTML/script/廣告文字，且中文字比例 >= 20% | Buffer |
+
+**設計決策**：移除獨立的 `langdetect` 語言偵測，改用中文字比例檢查（更快、無額外依賴）。若未來需要多語言支援，再加入 `langdetect`。
 
 **內容品質檢查實作**：
 ```python
@@ -96,10 +100,13 @@ def check_content_quality(article_body: str) -> tuple[bool, str]:
     檢查內容是否為有效文章（非 HTML 殘留、script、廣告）
     Returns: (is_valid, reason)
     """
+    if not article_body:
+        return False, "內容為空"
+
     # 1. HTML 標籤比例檢查
     html_pattern = r'<[^>]+>'
     html_matches = re.findall(html_pattern, article_body)
-    html_ratio = len(''.join(html_matches)) / len(article_body) if article_body else 1
+    html_ratio = len(''.join(html_matches)) / len(article_body)
     if html_ratio > 0.3:
         return False, "HTML 標籤比例過高"
 
@@ -109,34 +116,16 @@ def check_content_quality(article_body: str) -> tuple[bool, str]:
         if re.search(pattern, article_body):
             return False, "疑似包含 script 內容"
 
-    # 3. 中文字比例檢查（至少 20%）
+    # 3. 中文字比例檢查（至少 20%）- 同時作為語言檢查
     chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', article_body))
-    if len(article_body) > 0 and chinese_chars / len(article_body) < 0.2:
-        return False, "中文字比例過低"
+    chinese_ratio = chinese_chars / len(article_body)
+    if chinese_ratio < 0.2:
+        return False, f"中文字比例過低 ({chinese_ratio:.1%})"
 
     return True, ""
 ```
 
-**語言偵測實作**：
-```python
-from langdetect import detect, LangDetectException
-
-def detect_language(text: str) -> str:
-    """偵測文字語言，失敗時返回 'unknown'"""
-    try:
-        # 取前 500 字做偵測（效能考量）
-        sample = text[:500] if len(text) > 500 else text
-        return detect(sample)
-    except LangDetectException:
-        return "unknown"
-```
-
 **不合格處理**：記錄原因到 buffer，不丟棄（可人工審核）
-
-**新增依賴**：
-```bash
-pip install langdetect
-```
 
 ---
 
@@ -201,7 +190,7 @@ def generate_chunk_summary(headline: str, chunk_sentences: List[str],
 ```python
 @dataclass
 class Chunk:
-    chunk_id: str              # "{article_url}#chunk_{idx}"
+    chunk_id: str              # "{article_url}::chunk::{idx}"（使用 ::chunk:: 分隔符避免與 URL 中的 # 衝突）
     article_url: str
     chunk_index: int
     sentences: List[str]
@@ -210,11 +199,20 @@ class Chunk:
     summary_embedding: List[float]  # OpenAI embedding（存入 Qdrant）
     char_start: int
     char_end: int
+
+def make_chunk_id(article_url: str, chunk_index: int) -> str:
+    """生成 chunk ID，使用 ::chunk:: 分隔符避免與 URL 中的 # 符號衝突"""
+    return f"{article_url}::chunk::{chunk_index}"
+
+def parse_chunk_id(chunk_id: str) -> tuple[str, int]:
+    """解析 chunk ID，返回 (article_url, chunk_index)"""
+    parts = chunk_id.rsplit("::chunk::", 1)
+    return parts[0], int(parts[1])
 ```
 
 **設計決策**：
 - **不去重**：即使 chunk 相似也保留（研究者可能需要細節差異）
-- **新聞預設 threshold = 0.83**（見下方閾值驗證）
+- **新聞預設 threshold = 0.80**（將由 POC 驗證後調整）
 - **本地模型分塊 + API embedding 存儲**：平衡成本與搜尋品質
 - **Extractive Summary**：選取最具代表性的句子，而非簡單截斷
 - 與現有 `core/chunking.py` 的差異：語義分塊 vs. 固定 token 數
@@ -263,7 +261,7 @@ pip install sentence-transformers
 存 chunk summary + embedding，**保持現有 payload 結構**：
 ```python
 payload = {
-    'url': chunk_id,           # "article_url#chunk_0"
+    'url': chunk_id,           # "article_url::chunk::0"
     'name': summary,           # chunk 摘要
     'site': site,
     'schema_json': json.dumps({
@@ -405,16 +403,47 @@ CREATE TABLE migration_records (
     new_chunk_ids_json TEXT     -- JSON array
 );
 
--- 舊 points 備份表（用於回滾）
+-- 舊 points 備份表（用於回滾）- 只備份 payload，不備份 vector
 CREATE TABLE qdrant_backup (
     point_id TEXT PRIMARY KEY,
     migration_id TEXT NOT NULL,
     payload_json TEXT NOT NULL,
-    vector BLOB NOT NULL,
+    -- 不儲存 vector（約 6KB/筆），可從原文重建
+    -- vector 重建方式：從 payload_json 取得文章內容，重新呼叫 embedding API
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (migration_id) REFERENCES migration_records(migration_id)
 );
 ```
+
+**備份空間估算**（不含 vector）：
+- 1000 萬篇 × 5 chunks = 5000 萬筆
+- 每筆 payload_json 約 500 bytes
+- 總計約 **25GB**（vs. 含 vector 的 300GB）
+
+**回滾時 Vector 重建流程**：
+```python
+async def rebuild_vectors_for_rollback(self, point_ids: List[str]) -> List[PointStruct]:
+    """回滾時重建 vectors"""
+    points = []
+    for point_id in point_ids:
+        # 1. 從備份取得 payload
+        payload = await self._get_backup_payload(point_id)
+
+        # 2. 從 payload 取得原文
+        text = payload.get('name', '')  # summary 文字
+
+        # 3. 重新計算 embedding
+        vector = await get_embedding(text)
+
+        points.append(PointStruct(
+            id=point_id,
+            vector=vector,
+            payload=payload
+        ))
+    return points
+```
+
+**注意**：回滾會產生額外的 embedding API 成本（約 $0.02/1000 篇），但節省 90%+ 的備份儲存空間。
 
 ---
 
@@ -429,6 +458,80 @@ CREATE TABLE qdrant_backup (
 | 日期解析失敗率 | > 10% | WARNING |
 | **Chunk 數異常** | < 1 或 > 20 個/篇 | WARNING |
 | **本地模型記憶體** | > 2GB | WARNING |
+
+**Metrics 暴露方式**：整合現有 Analytics 架構
+
+```python
+from core.analytics import AnalyticsManager
+
+class HealthMonitor:
+    def __init__(self, analytics: AnalyticsManager):
+        self.analytics = analytics
+        self.metrics = {
+            'articles_processed': 0,
+            'articles_failed': 0,
+            'chunks_created': 0,
+            'embedding_failures': 0,
+            'quality_gate_rejections': 0,
+            'avg_chunks_per_article': 0.0,
+            'avg_processing_time_ms': 0.0,
+        }
+
+    async def record_article_processed(self, article_url: str, chunks: int, time_ms: float):
+        """記錄文章處理完成"""
+        self.metrics['articles_processed'] += 1
+        self.metrics['chunks_created'] += chunks
+        # 更新移動平均
+        n = self.metrics['articles_processed']
+        self.metrics['avg_chunks_per_article'] = (
+            (self.metrics['avg_chunks_per_article'] * (n-1) + chunks) / n
+        )
+        self.metrics['avg_processing_time_ms'] = (
+            (self.metrics['avg_processing_time_ms'] * (n-1) + time_ms) / n
+        )
+        # 寫入 Analytics DB
+        await self.analytics.log_indexing_event(
+            event_type='article_processed',
+            article_url=article_url,
+            chunks=chunks,
+            time_ms=time_ms
+        )
+
+    def get_metrics(self) -> dict:
+        """返回當前 metrics（供 /metrics endpoint 使用）"""
+        return {
+            **self.metrics,
+            'embedding_failure_rate': (
+                self.metrics['embedding_failures'] / max(1, self.metrics['articles_processed'])
+            ),
+        }
+
+    def check_alerts(self) -> list[dict]:
+        """檢查是否有告警條件觸發"""
+        alerts = []
+        failure_rate = self.metrics['embedding_failures'] / max(1, self.metrics['articles_processed'])
+        if failure_rate > 0.05:
+            alerts.append({
+                'level': 'CRITICAL',
+                'metric': 'embedding_failure_rate',
+                'value': failure_rate,
+                'threshold': 0.05,
+                'message': f'Embedding 失敗率過高: {failure_rate:.1%}'
+            })
+        return alerts
+```
+
+**API Endpoint**（整合到現有 aiohttp server）：
+```python
+# webserver/aiohttp_server.py 新增
+async def indexing_metrics_handler(request):
+    """GET /api/indexing/metrics"""
+    monitor = request.app['indexing_health_monitor']
+    return web.json_response({
+        'metrics': monitor.get_metrics(),
+        'alerts': monitor.check_alerts()
+    })
+```
 
 ---
 
@@ -585,21 +688,20 @@ async def get_full_article_text(article_url: str) -> Optional[str]:
 ```yaml
 quality_gate:
   min_body_length: 50
-  min_chinese_ratio: 0.2       # 中文字比例下限
+  min_chinese_ratio: 0.2       # 中文字比例下限（同時作為語言檢查）
   max_html_ratio: 0.3          # HTML 標籤比例上限
-  required_language: "zh"      # 必須為中文
 
 chunking:
-  default_threshold: 0.83
+  default_threshold: 0.80      # 預設（將由 POC 驗證後調整）
   max_chunk_sentences: 10
   summary_max_length: 400
   extractive_summary_sentences: 3  # Extractive summary 選取句數
 
 source_tiers:
-  tier_1_threshold: 0.95
-  tier_2_threshold: 0.90
-  tier_3_threshold: 0.83
-  tier_4_threshold: 0.82
+  tier_1_threshold: 0.90       # 高閾值 = 更細碎分塊（適合需要精確引用的來源）
+  tier_2_threshold: 0.85
+  tier_3_threshold: 0.80       # 預設（將由 POC 驗證後調整）
+  tier_4_threshold: 0.75       # 低閾值 = 更大塊分塊（適合內容農場/聚合站）
 
 source_mappings:
   reuters.com: 2
@@ -607,7 +709,18 @@ source_mappings:
   ithome.com.tw: 3
 
 vault:
-  compression_level: 3
+  compression_level: 3          # 預設壓縮等級
+  short_article_threshold: 1000 # 短文字數門檻
+  long_article_threshold: 5000  # 長文字數門檻
+  short_compression_level: 1    # 短文壓縮等級（速度優先）
+  long_compression_level: 5     # 長文壓縮等級（壓縮率優先）
+
+# API Rate Limiting 設定
+api:
+  embedding_concurrent_limit: 50      # 同時進行的 embedding 請求數
+  embedding_requests_per_minute: 5000 # 每分鐘最大請求數
+  embedding_retry_attempts: 3         # 失敗重試次數
+  embedding_retry_delay_ms: 1000      # 重試間隔（毫秒）
 
 health_monitor:
   embedding_failure_rate: 0.05
@@ -660,18 +773,41 @@ data/
 ## Implementation Order
 
 ### Phase 0: Threshold Validation (POC)
-**目標**：驗證語義分塊閾值 0.83 是否適合中文新聞
+**目標**：驗證語義分塊閾值是否適合中文新聞
 
 1. 準備測試集：20 篇不同類型文章（短新聞、長報導、評論）
 2. 實作簡化版 chunking（只做分塊，不存儲）
-3. 測試不同閾值（0.80, 0.83, 0.85, 0.88）
+3. 測試不同閾值（0.75, 0.80, 0.85, 0.90）
 4. 人工評估分塊品質
 5. 確定最終閾值
 
 **驗收標準**：
 - 平均每篇產生 3-8 個 chunks
-- 80% 以上 chunks 語義完整（不在句子中間斷開）
+- 80% 以上 chunks 語義完整
 - 無明顯的過度分塊或分塊不足
+
+**語義完整性評估標準**（人工評估 checklist）：
+
+| 評估項目 | 合格條件 | 權重 |
+|----------|----------|------|
+| **句號切分** | Chunk 邊界在句號（。！？）處 | 30% |
+| **主謂完整** | 主詞和謂詞在同一個 chunk | 25% |
+| **段落連貫** | 同一段落的句子盡量在同一 chunk | 20% |
+| **語意獨立** | 單獨閱讀 chunk 能理解大意 | 15% |
+| **長度適中** | 每個 chunk 50-500 字（不太短或太長） | 10% |
+
+**評估流程**：
+```
+1. 對每篇文章的每個 chunk 評分（0-10 分）
+2. 計算該閾值下所有 chunks 的平均分
+3. 選擇平均分最高的閾值作為預設值
+4. 若多個閾值分數接近，選擇產生較少 chunks 的（減少 API 成本）
+```
+
+**POC 輸出**：
+- `poc_results.json`：每個閾值的詳細評估數據
+- 建議的預設閾值（可能不是 0.83）
+- 各類型文章（短/中/長）的最佳閾值建議
 
 ### Phase 1: Core Infrastructure
 1. `config/config_indexing.yaml` - 配置檔
@@ -798,13 +934,12 @@ data/
 
 需要安裝：
 ```bash
-pip install zstd numpy sentence-transformers langdetect
+pip install zstd numpy sentence-transformers
 ```
 
 - `zstd` - Vault 壓縮
 - `numpy` - 向量運算
 - `sentence-transformers` - 本地語義分塊（免費）
-- `langdetect` - 語言偵測
 
 已有：
 - `qdrant-client` - Vector DB
@@ -1042,16 +1177,18 @@ source_mappings:
 
 **預設行為**：
 - 未列在 `source_mappings` 的來源自動視為 **Tier 3**
-- Tier 3 閾值 = 0.83（適合大多數新聞）
+- Tier 3 閾值 = 0.80（將由 POC 驗證後調整）
 - 你不需要列出所有來源，只需要列出「不是 Tier 3」的來源
 
 **Tier 選擇指南**：
-| Tier | 適用對象 | 效果 |
-|------|----------|------|
-| 1 | 法規、官方公告 | 極細碎分塊，保留每個細節 |
-| 2 | 通訊社、專業媒體 | 細碎分塊 |
-| 3 | 一般新聞 | 平衡分塊（預設） |
-| 4 | 聚合站、內容農場 | 大塊分塊，減少雜訊 |
+| Tier | 適用對象 | 閾值 | 效果 |
+|------|----------|------|------|
+| 1 | 法規、官方公告 | 0.90 | 更細碎分塊，保留每個細節 |
+| 2 | 通訊社、專業媒體 | 0.85 | 較細碎分塊 |
+| 3 | 一般新聞 | 0.80 | 平衡分塊（預設） |
+| 4 | 聚合站、內容農場 | 0.75 | 大塊分塊，減少雜訊 |
+
+**閾值效果說明**：閾值越高，對語義相似度要求越嚴格，相鄰句子更容易被切分成不同 chunk。
 
 ### AI 可自動完成
 

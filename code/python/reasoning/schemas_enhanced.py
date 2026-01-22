@@ -335,3 +335,110 @@ class AnalystResearchOutputEnhancedKG(AnalystResearchOutputEnhanced):
         description="Entity-relationship knowledge graph"
     )
     # gap_resolutions is inherited from AnalystResearchOutputEnhanced
+
+
+# ============================================================================
+# Phase 2 CoV: Chain of Verification - Claim Extraction and Verification
+# ============================================================================
+
+class ClaimType(str, Enum):
+    """Types of verifiable claims."""
+    NUMBER = "number"           # 數字（金額、數量、百分比）
+    DATE = "date"               # 日期（具體日期、時間點）
+    PERSON = "person"           # 人名
+    ORGANIZATION = "organization"  # 機構名
+    EVENT = "event"             # 具體事件
+    STATISTIC = "statistic"     # 統計數據
+    QUOTE = "quote"             # 引述
+
+
+class VerifiableClaim(BaseModel):
+    """A single verifiable claim extracted from draft."""
+    claim: str = Field(..., description="The specific factual claim")
+    claim_type: ClaimType = Field(..., description="Type of claim")
+    source_reference: Optional[int] = Field(
+        default=None,
+        description="Citation ID mentioned in the claim (e.g., [1] → 1)"
+    )
+    context: Optional[str] = Field(
+        default=None,
+        description="Surrounding context for better verification"
+    )
+
+
+class ClaimsList(BaseModel):
+    """List of verifiable claims extracted from a draft."""
+    claims: List[VerifiableClaim] = Field(
+        default_factory=list,
+        description="List of extracted verifiable claims"
+    )
+    extraction_notes: Optional[str] = Field(
+        default=None,
+        description="Notes about the extraction process"
+    )
+
+
+class VerificationStatus(str, Enum):
+    """Status of claim verification."""
+    VERIFIED = "verified"           # 來源明確支持此宣稱
+    UNVERIFIED = "unverified"       # 來源中找不到支持證據
+    CONTRADICTED = "contradicted"   # 來源與宣稱矛盾
+    PARTIALLY_VERIFIED = "partially_verified"  # 部分正確
+
+
+class ClaimVerificationResult(BaseModel):
+    """Result of verifying a single claim against sources."""
+    claim: str = Field(..., description="The original claim being verified")
+    status: VerificationStatus = Field(..., description="Verification status")
+    evidence: Optional[str] = Field(
+        default=None,
+        description="Supporting or contradicting evidence from sources"
+    )
+    source_id: Optional[int] = Field(
+        default=None,
+        description="Citation ID of the source used for verification"
+    )
+    explanation: str = Field(
+        ...,
+        description="Explanation of verification result"
+    )
+    confidence: Literal["high", "medium", "low"] = Field(
+        default="medium",
+        description="Confidence in verification result"
+    )
+
+
+class CoVVerificationOutput(BaseModel):
+    """Complete CoV verification output for Critic."""
+    results: List[ClaimVerificationResult] = Field(
+        default_factory=list,
+        description="Verification results for each claim"
+    )
+    summary: str = Field(
+        ...,
+        description="Summary of verification findings"
+    )
+    verified_count: int = Field(default=0, description="Number of verified claims")
+    unverified_count: int = Field(default=0, description="Number of unverified claims")
+    contradicted_count: int = Field(default=0, description="Number of contradicted claims")
+
+    @property
+    def has_critical_issues(self) -> bool:
+        """Check if there are critical verification issues."""
+        return self.contradicted_count > 0 or self.unverified_count >= 3
+
+    @property
+    def verification_rate(self) -> float:
+        """Calculate verification success rate."""
+        total = len(self.results)
+        if total == 0:
+            return 1.0
+        return self.verified_count / total
+
+
+class CriticReviewOutputEnhancedCoV(CriticReviewOutputEnhanced):
+    """Critic output with CoV verification results."""
+    cov_verification: Optional[CoVVerificationOutput] = Field(
+        default=None,
+        description="Chain of Verification results (Phase 2 CoV)"
+    )

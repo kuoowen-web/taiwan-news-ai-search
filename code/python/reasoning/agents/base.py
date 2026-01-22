@@ -21,7 +21,7 @@ _instructor_client_lock = asyncio.Lock()
 
 try:
     import instructor
-    from instructor import Retrying
+    from instructor import Mode
     from openai import AsyncOpenAI
     _instructor_available = True
 except ImportError:
@@ -59,9 +59,11 @@ async def _get_instructor_client():
                 return None
 
             logger.info(f"TypeAgent: Initializing instructor client with OpenAI (key starts with: {provider_config.api_key[:8]}...)")
-            # Create instructor-wrapped async client
+            # Create instructor-wrapped async client with RESPONSES_TOOLS mode
+            # This mode supports GPT-5.1 Responses API (client.responses.create)
             base_client = AsyncOpenAI(api_key=provider_config.api_key)
-            _instructor_client = instructor.from_openai(base_client)
+            _instructor_client = instructor.from_openai(base_client, mode=Mode.RESPONSES_TOOLS)
+            logger.info("TypeAgent: Using Mode.RESPONSES_TOOLS for GPT-5.1 Responses API")
 
     return _instructor_client
 
@@ -121,32 +123,22 @@ async def generate_structured(
     logger.info(f"TypeAgent: Generating structured output with {response_model.__name__}")
     logger.debug(f"TypeAgent: Using model {model}, max_retries={max_retries}")
 
-    # Track retry count using a mutable container
-    retry_state = {"count": 0}
-
-    def on_retry(retry_info: Retrying) -> None:
-        """Callback to track retry attempts."""
-        retry_state["count"] += 1
-        logger.warning(
-            f"TypeAgent: Retry #{retry_state['count']} for {response_model.__name__} - "
-            f"Error: {retry_info.exception}"
-        )
-
     try:
-        # Use instructor's automatic retry and validation with callback
+        # Use instructor's automatic retry and validation
+        # max_retries is passed directly as an integer to instructor
         result = await asyncio.wait_for(
             client.chat.completions.create(
                 model=model,
                 response_model=response_model,
                 messages=[{"role": "user", "content": prompt}],
-                max_retries=Retrying(max_retries=max_retries, on_retry=on_retry),
+                max_retries=max_retries,
                 max_tokens=max_tokens  # Critical: limit response length to prevent timeout
             ),
             timeout=timeout
         )
 
-        logger.info(f"TypeAgent: Successfully generated {response_model.__name__} (retries: {retry_state['count']})")
-        return result, retry_state["count"], False
+        logger.info(f"TypeAgent: Successfully generated {response_model.__name__}")
+        return result, 0, False  # retry_count not tracked without custom callback
 
     except asyncio.TimeoutError:
         logger.error(f"TypeAgent: Request timed out after {timeout}s")

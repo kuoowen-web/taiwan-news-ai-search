@@ -37,6 +37,14 @@ class ProgressConfig:
             "weight": 0.6,
             "message": "正在檢查邏輯與來源可信度...",
         },
+        "cov_verifying": {
+            "weight": 0.65,
+            "message": "正在驗證事實宣稱...",
+        },
+        "cov_complete": {
+            "weight": 0.75,
+            "message": "事實驗證完成",
+        },
         "critic_complete": {
             "weight": 0.8,
             "message": "審查完成",
@@ -761,10 +769,18 @@ class DeepResearchOrchestrator:
 
                 if tracer:
                     with tracer.agent_span("critic", "review", critic_input) as span:
-                        review = await self.critic.review(draft, query, mode, analyst_output=response)
+                        review = await self.critic.review(
+                            draft, query, mode,
+                            analyst_output=response,
+                            formatted_context=self.formatted_context  # Phase 2 CoV
+                        )
                         span.set_result(review)
                 else:
-                    review = await self.critic.review(draft, query, mode, analyst_output=response)
+                    review = await self.critic.review(
+                        draft, query, mode,
+                        analyst_output=response,
+                        formatted_context=self.formatted_context  # Phase 2 CoV
+                    )
 
                 iteration_logger.log_agent_output(
                     iteration=iteration + 1,
