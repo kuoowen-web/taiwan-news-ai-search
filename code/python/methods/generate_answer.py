@@ -587,8 +587,42 @@ class GenerateAnswer(NLWebHandler):
                     article_context += "\n"
                 article_context += "===\n\n"
 
+            # Build Deep Research report context if available
+            research_report_context = ""
+            has_research_report = getattr(self, 'injected_research_report', None) is not None
+            if has_research_report:
+                research_report_context = f"""
+===前次深度研究報告===
+{self.injected_research_report}
+===
+
+注意：
+- 報告中的 [數字] 為引用標記，對應的來源 URL 已記錄
+- 請基於此報告回答用戶的追問
+- 如用戶詢問特定引用的詳細內容，可告知該來源的資訊
+
+"""
+                logger.info(f"[FREE_CONVERSATION] Injected research report into prompt ({len(self.injected_research_report)} chars)")
+                print(f"[FREE_CONVERSATION] Injected research report into prompt ({len(self.injected_research_report)} chars)")
+
             # Create a detailed prompt for high-quality conversational responses
-            if has_cached_articles:
+            # Priority: Deep Research report > cached articles > general conversation
+            if has_research_report:
+                # Has previous Deep Research report - use it as primary context
+                prompt = f"""你是一個專業的台灣新聞分析助手。用戶之前進行了一次深度研究，現在針對該研究結果進行追問。
+
+{research_report_context}
+{conversation_context}當前問題: {self.query}
+
+回答要求：
+1. **基於報告回答** - 優先使用深度研究報告中的內容回答
+2. **保持引用格式** - 如果引用報告中的資訊，保留原有的 [數字] 引用標記
+3. **直接且具體** - 使用報告中的具體數據、公司名稱、技術名稱
+4. **結構清晰** - 用 1-2 段組織回答，直接回應用戶的追問
+5. **承認不確定性** - 如果報告中沒有相關資訊，明確說明
+
+請用繁體中文回答，保持專業且資訊豐富。"""
+            elif has_cached_articles:
                 prompt = f"""You are an AI assistant helping with Taiwan news analysis. You have access to news articles from the user's previous search.
 
 {conversation_context}{article_context}當前問題: {self.query}
