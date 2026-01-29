@@ -192,4 +192,55 @@
 
 ---
 
+## ✅ Track I：M0 Indexing 資料工廠（2026-01-28）
+
+**目標**：建構完整 Data Pipeline - Crawler → Indexing → Storage
+
+### Crawler 系統（`code/python/crawler/`）
+
+**6 個 Parser**：
+| Parser | 來源 | 爬取模式 | HTTP Client |
+|--------|------|----------|-------------|
+| `ltn` | 自由時報 | Sequential ID | AIOHTTP |
+| `udn` | 聯合報 | Sequential ID | AIOHTTP |
+| `cna` | 中央社 | Sequential ID | CURL_CFFI |
+| `moea` | 經濟部 | List-based | AIOHTTP |
+| `einfo` | 環境資訊中心 | Sequential + Binary Search | CURL_CFFI |
+| `esg_businesstoday` | 今周刊 ESG | Sitemap / AJAX | CURL_CFFI |
+
+**核心模組**：
+- `core/engine.py` - 爬蟲引擎（async 支援）
+- `core/interfaces.py` - 抽象介面（BaseParser, TextProcessor）
+- `core/pipeline.py` - 處理管線
+- `core/settings.py` - 配置常數（rate limits, timeouts）
+- `parsers/factory.py` - Parser 工廠模式
+
+**特色**：
+- Binary Search 自動偵測最新 ID
+- Sitemap 模式批量取得
+- 34 個單元測試 + E2E 測試
+
+### Indexing Pipeline（`code/python/indexing/`）
+
+**模組**：
+- `source_manager.py` - 來源分級（Tier 1-4）
+- `ingestion_engine.py` - TSV → CDM 解析
+- `quality_gate.py` - 品質驗證（長度、HTML、中文比例）
+- `chunking_engine.py` - 170 字/chunk + Extractive Summary
+- `dual_storage.py` - SQLite + Zstd 壓縮（VaultStorage）
+- `rollback_manager.py` - 遷移記錄、payload 備份
+- `pipeline.py` - 主流程 + 斷點續傳
+- `vault_helpers.py` - Async 介面
+
+**CLI**：
+```bash
+# Crawler
+python -m crawler.main --source ltn --auto-latest --count 100
+
+# Indexing
+python -m indexing.pipeline data.tsv --site udn --resume
+```
+
+---
+
 *更新：2026-01-28*

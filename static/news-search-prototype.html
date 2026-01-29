@@ -106,47 +106,36 @@
 
         <!-- 內容區 -->
         <div class="left-sidebar-content">
+            <!-- 分享結果按鈕 -->
+            <button class="btn-share-sidebar" id="btnShareSidebar">
+                <span>🔗</span>
+                <span>分享結果</span>
+            </button>
+
             <!-- 新對話按鈕 -->
             <button class="btn-new-conversation" id="btnNewConversation">
                 <span>+</span>
                 <span>開啟新對話</span>
             </button>
 
-            <!-- 歷史搜尋區塊 -->
-            <div class="left-sidebar-section">
-                <div class="left-sidebar-section-header">
-                    <div class="left-sidebar-section-title">
-                        <span>🔍</span>
-                        <span>歷史搜尋</span>
-                    </div>
-                </div>
-                <input type="text" class="history-search-input" id="historySearchInput" placeholder="搜尋歷史記錄...">
-                <div class="history-list" id="historyList">
-                    <div class="empty-history">尚無搜尋記錄</div>
-                </div>
-            </div>
+            <!-- 歷史搜尋按鈕 -->
+            <button class="btn-history-search" id="btnHistorySearch">
+                <span>🔍</span>
+                <span>歷史搜尋</span>
+            </button>
 
-            <!-- 分類區塊 -->
+            <!-- 資料夾/專案區塊 -->
             <div class="left-sidebar-section">
                 <button class="btn-toggle-categories" id="btnToggleCategories">
                     <span>📁</span>
-                    <span>開啟分類</span>
-                    <span class="toggle-icon">▼</span>
+                    <span>開啟資料夾</span>
                 </button>
-                <div class="categories-list" id="categoriesList">
-                    <div class="category-item">
-                        <span class="category-item-icon">📂</span>
-                        <span>分類 1</span>
-                    </div>
-                    <div class="category-item">
-                        <span class="category-item-icon">📂</span>
-                        <span>分類 2</span>
-                    </div>
-                    <button class="btn-add-category" id="btnAddCategory">
-                        <span>+</span>
-                        <span>新增分類</span>
-                    </button>
-                </div>
+            </div>
+
+            <!-- 過往 Session 列表（自動填入） -->
+            <div class="left-sidebar-divider"></div>
+            <div class="left-sidebar-sessions" id="leftSidebarSessions">
+                <!-- Sessions rendered dynamically -->
             </div>
         </div>
 
@@ -174,6 +163,10 @@
             <button class="right-tab-label" data-tab="history">
                 <span class="right-tab-label-icon">📚</span>
                 <span>問答紀錄</span>
+            </button>
+            <button class="right-tab-label" data-tab="pinned-news">
+                <span class="right-tab-label-icon">📌</span>
+                <span>釘選新聞</span>
             </button>
         </div>
 
@@ -244,10 +237,57 @@
                 </div>
             </div>
         </div>
+
+        <!-- 釘選新聞面板 -->
+        <div class="right-tab-panel" id="tabPanelPinnedNews" data-tab="pinned-news">
+            <div class="right-tab-panel-header">
+                <div class="right-tab-panel-title">
+                    <span>📌</span>
+                    <span>釘選新聞</span>
+                </div>
+                <button class="right-tab-panel-close" data-close-tab>&times;</button>
+            </div>
+            <div class="right-tab-panel-content">
+                <div class="pinned-news-list" id="pinnedNewsList">
+                    <div class="pinned-news-empty">尚未釘選任何新聞</div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <main>
         <div class="container">
+            <!-- Folder/Project Page (replaces main content when active) -->
+            <div class="folder-page" id="folderPage" style="display: none;">
+                <!-- Folder Main View -->
+                <div class="folder-main" id="folderMain">
+                    <button class="folder-back-btn" id="btnFolderBackToHome">&lt; 回到搜尋</button>
+                    <h1 class="folder-page-title">資料夾</h1>
+                    <div class="folder-search-bar">
+                        <span class="folder-search-icon">&#128269;</span>
+                        <input type="text" id="folderSearchInput" placeholder="搜尋資料夾" />
+                    </div>
+                    <div class="folder-sort-tabs">
+                        <button class="folder-sort-tab active" data-sort="all">全列表</button>
+                        <button class="folder-sort-tab" data-sort="created">建立時間</button>
+                        <button class="folder-sort-tab" data-sort="updated">最後更新</button>
+                    </div>
+                    <div class="folder-grid" id="folderGrid">
+                        <!-- Folder cards rendered dynamically -->
+                    </div>
+                    <button class="folder-add-btn" id="btnAddFolder">+ 新增資料夾</button>
+                </div>
+
+                <!-- Folder Detail View -->
+                <div class="folder-detail" id="folderDetail" style="display: none;">
+                    <button class="folder-back-btn" id="btnFolderBack">&lt; 回上頁</button>
+                    <h1 class="folder-detail-title" id="folderDetailTitle"></h1>
+                    <div class="folder-detail-sessions" id="folderDetailSessions">
+                        <!-- Sessions inside folder rendered dynamically -->
+                    </div>
+                </div>
+            </div>
+
             <!-- Initial State -->
             <div class="initial-state" id="initialState">
                 <h1>用自然語言搜尋最新新聞</h1>
@@ -409,6 +449,20 @@
 
                 <!-- Chat Container for Free Conversation Mode -->
                 <div class="chat-container" id="chatContainer">
+                    <!-- Pinned Messages Banner (Line-style) -->
+                    <div class="pinned-banner" id="pinnedBanner" style="display: none;">
+                        <div class="pinned-banner-current" id="pinnedBannerCurrent">
+                            <span class="pinned-banner-icon">📌</span>
+                            <span class="pinned-banner-text" id="pinnedBannerText"></span>
+                            <button class="pinned-banner-toggle" id="pinnedBannerToggle">
+                                <span class="pinned-banner-count" id="pinnedBannerCount">1</span>
+                                <span class="pinned-banner-arrow">▼</span>
+                            </button>
+                        </div>
+                        <div class="pinned-banner-dropdown" id="pinnedBannerDropdown">
+                            <!-- Pinned items will be populated dynamically -->
+                        </div>
+                    </div>
                     <div class="chat-messages" id="chatMessages">
                         <!-- Chat messages will be populated dynamically -->
                     </div>
@@ -465,10 +519,6 @@
                     <!-- Timeline items will be populated dynamically from API -->
                 </div>
 
-                <!-- Bottom Actions -->
-                <div class="bottom-actions">
-                    <button class="btn-action btn-share" id="btnShare">🔗 分享結果</button>
-                </div>
             </div>
         </div>
     </main>
@@ -492,6 +542,22 @@
             </div>
             <div class="modal-actions">
                 <button class="btn-close-modal" id="btnCloseModal">關閉</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- History Search Popup -->
+    <div class="history-popup-overlay" id="historyPopupOverlay">
+        <div class="history-popup">
+            <div class="history-popup-header">
+                <span class="history-popup-title">輸入關鍵字搜尋紀錄</span>
+                <button class="history-popup-close" id="historyPopupClose">&times;</button>
+            </div>
+            <div class="history-popup-search">
+                <input type="text" id="historyPopupSearchInput" placeholder="搜尋歷史記錄...">
+            </div>
+            <div class="history-popup-list" id="historyPopupList">
+                <div class="history-popup-empty">尚無搜尋記錄</div>
             </div>
         </div>
     </div>

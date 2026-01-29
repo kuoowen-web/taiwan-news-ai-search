@@ -2,6 +2,86 @@
 
 ## 最近里程碑
 
+### 2026-01-28：M0 Indexing 資料工廠完成 ✅
+
+**完整 Data Pipeline：Crawler → Indexing → Storage**
+
+#### Crawler 系統
+
+**6 個 Parser 實作**：
+| Parser | 來源 | 爬取模式 | HTTP Client |
+|--------|------|----------|-------------|
+| `ltn` | 自由時報 | Sequential ID | AIOHTTP |
+| `udn` | 聯合報 | Sequential ID | AIOHTTP |
+| `cna` | 中央社 | Sequential ID | CURL_CFFI |
+| `moea` | 經濟部 | List-based | AIOHTTP |
+| `einfo` | 環境資訊中心 | Sequential + Binary Search | CURL_CFFI |
+| `esg_businesstoday` | 今周刊 ESG | Sitemap / AJAX | CURL_CFFI |
+
+**核心模組**（`code/python/crawler/`）：
+- `core/engine.py` - 爬蟲引擎
+- `core/interfaces.py` - 抽象介面
+- `core/pipeline.py` - 處理管線
+- `core/settings.py` - 配置常數
+- `parsers/factory.py` - Parser 工廠
+
+**特色**：
+- Binary Search 自動偵測最新 ID（einfo）
+- Sitemap 模式批量取得（esg_businesstoday）
+- 34 個單元測試 + E2E 測試
+- 完整文件（`docs/indexing-spec.md`）
+
+**CLI**：
+```bash
+python -m crawler.main --source ltn --auto-latest --count 100
+```
+
+#### Indexing Pipeline
+
+**模組**（`code/python/indexing/`）：
+- `source_manager.py` - 來源分級（Tier 1-4）
+- `ingestion_engine.py` - TSV → CDM 解析
+- `quality_gate.py` - 品質驗證
+- `chunking_engine.py` - 170 字/chunk + Extractive Summary
+- `dual_storage.py` - SQLite + Zstd 壓縮
+- `rollback_manager.py` - 遷移記錄、備份
+- `pipeline.py` - 主流程 + 斷點續傳
+- `vault_helpers.py` - Async 介面
+
+**CLI**：
+```bash
+python -m indexing.pipeline data.tsv --site udn --resume
+```
+
+---
+
+### 2026-01-28：M0 Indexing Module 完成 ✅
+
+**Phase 1：核心基礎設施**
+- `config/config_indexing.yaml` - 完整配置
+- `SourceManager` - 來源分級（Tier 1-4）
+
+**Phase 2：Data Flow**
+- `IngestionEngine` - TSV → CDM 解析
+- `QualityGate` - 品質驗證（長度、HTML、中文比例）
+- `ChunkingEngine` - 170 字/chunk + Extractive Summary
+
+**Phase 3：Storage & Safety**
+- `VaultStorage` - SQLite + Zstd 壓縮（線程安全）
+- `RollbackManager` - 遷移記錄、payload 備份
+- `IndexingPipeline` - 主流程 + 斷點續傳
+- `MapPayload` - Qdrant payload 結構（version 2）
+
+**Phase 4：Integration**
+- `vault_helpers.py` - Async 介面
+  - `get_full_text_for_chunk(chunk_id)` - 取得 chunk 原文
+  - `get_full_article_text(article_url)` - 取得整篇文章
+  - `get_chunk_metadata(chunk_id)` - 解析 chunk ID
+
+**CLI**：`python -m indexing.pipeline data.tsv --site udn --resume`
+
+---
+
 ### 2026-01-28：Free Conversation Mode + CoV ✅
 
 **Reasoning 系統重大強化**

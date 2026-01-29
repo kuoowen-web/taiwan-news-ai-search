@@ -5,7 +5,7 @@
         const resultsSection = document.getElementById('resultsSection');
         const listView = document.getElementById('listView');
         const timelineView = document.getElementById('timelineView');
-        const btnShare = document.getElementById('btnShare');
+        const btnShare = document.getElementById('btnShareSidebar');
         const modalOverlay = document.getElementById('modalOverlay');
         const btnCloseModal = document.getElementById('btnCloseModal');
         const summaryToggle = document.getElementById('summaryToggle');
@@ -62,6 +62,11 @@
 
         // Track current conversation ID for multi-turn conversations
         let currentConversationId = null;
+
+        // Search cancellation mechanism — prevents stale search results from corrupting UI
+        let searchGenerationId = 0;
+        let currentSearchAbortController = null;
+        let currentSearchEventSource = null;
 
         // Session ID for analytics and A/B testing (persists until browser tab closes)
         let currentSessionId = sessionStorage.getItem('nlweb_session_id');
@@ -127,6 +132,15 @@
 
         // Chat history for free conversation mode
         let chatHistory = [];
+
+        // Pinned messages (Line-style announcement)
+        let pinnedMessages = [];
+        let messageIdCounter = 0;
+        const MAX_PINNED_MESSAGES = 5;
+
+        // Pinned news cards
+        let pinnedNewsCards = [];
+        const MAX_PINNED_NEWS = 10;
 
         // Accumulated articles from ALL searches in this conversation
         let accumulatedArticles = [];
@@ -292,17 +306,18 @@
         const btnCollapseSidebar = document.getElementById('btnCollapseSidebar');
         const btnNewConversation = document.getElementById('btnNewConversation');
         const btnToggleCategories = document.getElementById('btnToggleCategories');
-        const categoriesList = document.getElementById('categoriesList');
-        const historySearchInput = document.getElementById('historySearchInput');
-        const historyList = document.getElementById('historyList');
-        const btnAddCategory = document.getElementById('btnAddCategory');
+        // History Popup 元素
+        const btnHistorySearch = document.getElementById('btnHistorySearch');
+        const historyPopupOverlay = document.getElementById('historyPopupOverlay');
+        const historyPopupClose = document.getElementById('historyPopupClose');
+        const historyPopupSearchInput = document.getElementById('historyPopupSearchInput');
+        const historyPopupList = document.getElementById('historyPopupList');
         const btnSettings = document.getElementById('btnSettings');
 
         // 展開按鈕：開啟側邊欄
         btnExpandSidebar.addEventListener('click', () => {
             leftSidebar.classList.add('visible');
             btnExpandSidebar.classList.add('hidden');
-            renderHistoryInSidebar(); // 每次開啟時重新渲染歷史
         });
 
         // 收回按鈕：關閉側邊欄
@@ -324,37 +339,63 @@
             btnExpandSidebar.classList.remove('hidden');
         });
 
-        // 分類展開/收合
-        btnToggleCategories.addEventListener('click', () => {
-            btnToggleCategories.classList.toggle('expanded');
-            categoriesList.classList.toggle('visible');
-        });
-
-        // 新增分類（placeholder）
-        btnAddCategory.addEventListener('click', () => {
-            alert('分類功能即將推出！');
-        });
+        // 開啟資料夾 (btnToggleCategories) - 行為在 FOLDER/PROJECT SYSTEM 區段定義
 
         // 說明與設置（placeholder）
         btnSettings.addEventListener('click', () => {
             alert('說明與設置功能即將推出！');
         });
 
-        // 歷史搜尋過濾
-        historySearchInput.addEventListener('input', () => {
-            renderHistoryInSidebar(historySearchInput.value.trim().toLowerCase());
+        // ==================== 歷史搜尋 Popup ====================
+
+        // 顯示 popup
+        function showHistoryPopup() {
+            historyPopupOverlay.classList.add('visible');
+            historyPopupSearchInput.value = '';
+            historyPopupSearchInput.focus();
+            renderHistoryPopup();
+        }
+
+        // 隱藏 popup
+        function hideHistoryPopup() {
+            historyPopupOverlay.classList.remove('visible');
+        }
+
+        // 點擊「歷史搜尋」按鈕
+        btnHistorySearch.addEventListener('click', showHistoryPopup);
+
+        // 點擊關閉按鈕
+        historyPopupClose.addEventListener('click', hideHistoryPopup);
+
+        // 點擊 overlay 關閉
+        historyPopupOverlay.addEventListener('click', (e) => {
+            if (e.target === historyPopupOverlay) {
+                hideHistoryPopup();
+            }
         });
 
-        // 渲染左側邊欄的歷史記錄
-        function renderHistoryInSidebar(filterText = '') {
-            historyList.innerHTML = '';
+        // ESC 鍵關閉
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && historyPopupOverlay.classList.contains('visible')) {
+                hideHistoryPopup();
+            }
+        });
+
+        // 搜尋框輸入時過濾
+        historyPopupSearchInput.addEventListener('input', () => {
+            renderHistoryPopup(historyPopupSearchInput.value.trim().toLowerCase());
+        });
+
+        // 渲染 popup 歷史記錄列表
+        function renderHistoryPopup(filterText = '') {
+            historyPopupList.innerHTML = '';
 
             if (savedSessions.length === 0) {
-                historyList.innerHTML = '<div class="empty-history">尚無搜尋記錄</div>';
+                historyPopupList.innerHTML = '<div class="history-popup-empty">尚無搜尋記錄</div>';
                 return;
             }
 
-            // 過濾並限制數量
+            // 過濾
             let filteredSessions = savedSessions.slice().reverse();
             if (filterText) {
                 filteredSessions = filteredSessions.filter(session =>
@@ -362,50 +403,38 @@
                 );
             }
 
-            // 最多顯示 10 筆
-            const displaySessions = filteredSessions.slice(0, 10);
-
-            if (displaySessions.length === 0) {
-                historyList.innerHTML = '<div class="empty-history">找不到符合的記錄</div>';
+            if (filteredSessions.length === 0) {
+                historyPopupList.innerHTML = '<div class="history-popup-empty">找不到符合的記錄</div>';
                 return;
             }
 
-            displaySessions.forEach(session => {
+            filteredSessions.forEach(session => {
                 const date = new Date(session.createdAt);
                 const dateStr = date.toLocaleDateString('zh-TW', {
-                    month: 'short',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit'
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit'
                 });
 
-                const historyItem = document.createElement('div');
-                historyItem.className = 'history-item';
-                historyItem.innerHTML = `
-                    <div class="history-item-title">${escapeHTML(session.title)}</div>
-                    <div class="history-item-meta">${session.conversationHistory.length} 個查詢 · ${dateStr}</div>
-                    <button class="history-item-delete" data-session-id="${session.id}">✕</button>
+                const item = document.createElement('div');
+                item.className = 'history-popup-item';
+                item.innerHTML = `
+                    <div class="history-popup-item-content">
+                        <div class="history-popup-item-title">${escapeHTML(session.title)}</div>
+                        <div class="history-popup-item-date">${dateStr}</div>
+                    </div>
+                    <span class="history-popup-item-icon">→</span>
                 `;
 
-                // 點擊載入
-                historyItem.addEventListener('click', (e) => {
-                    if (e.target.classList.contains('history-item-delete')) return;
+                item.addEventListener('click', () => {
                     loadSavedSession(session);
+                    hideHistoryPopup();
+                    // 關閉左側邊欄
                     leftSidebar.classList.remove('visible');
                     btnExpandSidebar.classList.remove('hidden');
                 });
 
-                // 刪除按鈕
-                const deleteBtn = historyItem.querySelector('.history-item-delete');
-                deleteBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    if (confirm('確定要刪除這筆記錄嗎？')) {
-                        deleteSavedSession(session.id);
-                        renderHistoryInSidebar(filterText);
-                    }
-                });
-
-                historyList.appendChild(historyItem);
+                historyPopupList.appendChild(item);
             });
         }
 
@@ -424,6 +453,8 @@
                     sessionHistory: [...sessionHistory],
                     chatHistory: [...chatHistory],
                     accumulatedArticles: [...accumulatedArticles],
+                    pinnedMessages: [...pinnedMessages],
+                    pinnedNewsCards: [...pinnedNewsCards],
                     researchReport: currentResearchReport ? { ...currentResearchReport } : null,
                     createdAt: savedSessions[existingSessionIndex].createdAt,
                     updatedAt: Date.now()
@@ -437,6 +468,8 @@
                     sessionHistory: [...sessionHistory],
                     chatHistory: [...chatHistory],
                     accumulatedArticles: [...accumulatedArticles],
+                    pinnedMessages: [...pinnedMessages],
+                    pinnedNewsCards: [...pinnedNewsCards],
                     researchReport: currentResearchReport ? { ...currentResearchReport } : null,
                     createdAt: Date.now()
                 };
@@ -450,10 +483,13 @@
 
         // 重置對話
         function resetConversation() {
+            cancelActiveSearch();
             conversationHistory = [];
             sessionHistory = [];
             chatHistory = [];
             accumulatedArticles = [];
+            pinnedMessages = [];  // Clear pinned messages
+            pinnedNewsCards = [];  // Clear pinned news cards
             currentLoadedSessionId = null;
             currentResearchReport = null;  // Clear Deep Research report
             currentConversationId = null;  // Clear conversation ID
@@ -463,9 +499,42 @@
             listView.innerHTML = '';
             timelineView.innerHTML = '';
             initialState.style.display = 'block';
-            resultsSection.style.display = 'none';
+            resultsSection.classList.remove('active');
+            resultsSection.style.display = '';
+            // Hide folder page if open (discard snapshot since we're fully resetting)
+            const folderPageEl = document.getElementById('folderPage');
+            if (folderPageEl) folderPageEl.style.display = 'none';
+            _preFolderState = null;
+            // Move searchContainer back to main container if it was inside chatInputContainer
+            if (searchContainer.parentElement === chatInputContainer) {
+                const mainContainer = document.querySelector('main .container');
+                const loadingStateEl = document.getElementById('loadingState');
+                mainContainer.insertBefore(searchContainer, loadingStateEl);
+            }
+            searchContainer.style.display = 'block';
+            chatInputContainer.style.display = 'none';
             chatContainer.style.display = 'none';
+            chatContainer.classList.remove('active');
             chatMessagesEl.innerHTML = '';
+            // Reset to search mode
+            currentMode = 'search';
+            btnSearch.textContent = '搜尋';
+            searchInput.placeholder = '問我任何新聞相關問題，例如：最近台灣資安政策有什麼進展？';
+            modeButtons.forEach(btn => btn.classList.remove('active'));
+            if (modeButtons[0]) modeButtons[0].classList.add('active');
+            modeButtonsInline.forEach(btn => btn.classList.remove('active'));
+            const searchInlineBtn = document.querySelector('.mode-btn-inline[data-mode="search"]');
+            if (searchInlineBtn) searchInlineBtn.classList.add('active');
+
+            // Hide pinned banner
+            const pinnedBanner = document.getElementById('pinnedBanner');
+            if (pinnedBanner) pinnedBanner.style.display = 'none';
+
+            // Reset pinned news list
+            const pinnedNewsList = document.getElementById('pinnedNewsList');
+            if (pinnedNewsList) {
+                pinnedNewsList.innerHTML = '<div class="pinned-news-empty">尚未釘選任何新聞</div>';
+            }
 
             // 清空對話記錄顯示
             const convHistoryEl = document.getElementById('conversationHistory');
@@ -601,6 +670,7 @@
         async function handleStreamingRequest(url, query) {
             return new Promise((resolve, reject) => {
                 const eventSource = new EventSource(url);
+                currentSearchEventSource = eventSource; // Store for cancellation
                 let accumulatedData = {};
                 let memoryNotifications = [];
 
@@ -647,6 +717,7 @@
                                 // Stream complete, close connection
                                 console.log('Stream complete. Accumulated data:', accumulatedData);
                                 eventSource.close();
+                                currentSearchEventSource = null;
                                 resolve(accumulatedData);
                                 break;
 
@@ -665,6 +736,7 @@
                 eventSource.onerror = (error) => {
                     console.error('SSE error:', error);
                     eventSource.close();
+                    currentSearchEventSource = null;
                     // Resolve with whatever we have so far
                     resolve(accumulatedData);
                 };
@@ -1039,9 +1111,12 @@
                 const description = schema.description || article.description || '';
                 const url = schema.url || '#';
 
+                // Check if this article is already pinned
+                const isPinned = pinnedNewsCards.some(p => p.url === url);
+
                 // Create card for list view
                 const cardHTML = `
-                    <div class="news-card">
+                    <div class="news-card" data-url="${escapeHTML(url)}" data-title="${escapeHTML(title)}">
                         <div class="news-title">${escapeHTML(title)}</div>
                         <div class="news-meta">
                             <span>🏢 ${escapeHTML(publisher)}</span>
@@ -1052,7 +1127,10 @@
                             </div>
                         </div>
                         ${description ? `<div class="news-excerpt">${escapeHTML(description)}</div>` : ''}
-                        <a href="${escapeHTML(url)}" class="btn-read-more" target="_blank">閱讀全文 →</a>
+                        <div class="news-card-footer">
+                            <a href="${escapeHTML(url)}" class="btn-read-more" target="_blank">閱讀全文 →</a>
+                            <button class="news-card-pin ${isPinned ? 'pinned' : ''}" title="${isPinned ? '取消釘選' : '釘選新聞'}">📌</button>
+                        </div>
                     </div>
                 `;
 
@@ -1063,7 +1141,7 @@
                     articlesByDate[date] = [];
                 }
                 articlesByDate[date].push({
-                    title, publisher, description, url, starsHTML, relevancePercent
+                    title, publisher, description, url, starsHTML, relevancePercent, isPinned
                 });
             });
 
@@ -1076,7 +1154,7 @@
                         <div class="timeline-dot"></div>
                         <div class="date-label">${date}</div>
                         ${dateArticles.map(art => `
-                            <div class="news-card">
+                            <div class="news-card" data-url="${escapeHTML(art.url)}" data-title="${escapeHTML(art.title)}">
                                 <div class="news-title">${escapeHTML(art.title)}</div>
                                 <div class="news-meta">
                                     <span>🏢 ${escapeHTML(art.publisher)}</span>
@@ -1086,7 +1164,10 @@
                                     </div>
                                 </div>
                                 ${art.description ? `<div class="news-excerpt">${escapeHTML(art.description)}</div>` : ''}
-                                <a href="${escapeHTML(art.url)}" class="btn-read-more" target="_blank">閱讀全文 →</a>
+                                <div class="news-card-footer">
+                                    <a href="${escapeHTML(art.url)}" class="btn-read-more" target="_blank">閱讀全文 →</a>
+                                    <button class="news-card-pin ${art.isPinned ? 'pinned' : ''}" title="${art.isPinned ? '取消釘選' : '釘選新聞'}">📌</button>
+                                </div>
                             </div>
                         `).join('')}
                     </div>
@@ -1141,15 +1222,36 @@
             }
         });
 
+        // Cancel any in-flight search to prevent stale results from corrupting UI
+        function cancelActiveSearch() {
+            searchGenerationId++;
+            if (currentSearchAbortController) {
+                currentSearchAbortController.abort();
+                currentSearchAbortController = null;
+            }
+            if (currentSearchEventSource) {
+                currentSearchEventSource.close();
+                currentSearchEventSource = null;
+            }
+            loadingState.classList.remove('active');
+        }
+
         async function performSearch() {
             const query = searchInput.value.trim();
             if (!query) return;
 
+            // Cancel any previous in-flight search
+            cancelActiveSearch();
+            const mySearchGeneration = searchGenerationId;
+            currentSearchAbortController = new AbortController();
+
             // Note: Analytics will be initialized when we receive 'begin-nlweb-response' from backend
             // with the server-generated query_id
 
-            // Hide initial state
+            // Hide initial state and folder page
             initialState.style.display = 'none';
+            const folderPageSearch = document.getElementById('folderPage');
+            if (folderPageSearch) folderPageSearch.style.display = 'none';
 
             // Check current mode
             if (currentMode === 'chat') {
@@ -1193,9 +1295,14 @@
                     summarizeUrl.searchParams.append('prev', JSON.stringify(prevQueriesForThisTurn));
                 }
 
-                const summarizeResponse = await fetch(summarizeUrl.toString());
+                const summarizeResponse = await fetch(summarizeUrl.toString(), { signal: currentSearchAbortController?.signal });
                 if (!summarizeResponse.ok) {
                     throw new Error(`API error: ${summarizeResponse.statusText}`);
+                }
+                // Stale check: if another search/session-load started, discard results
+                if (mySearchGeneration !== searchGenerationId) {
+                    console.log('[Search] Stale search discarded after summarize fetch');
+                    return;
                 }
 
                 let summarizeData = await summarizeResponse.json();
@@ -1239,6 +1346,12 @@
 
                 console.log('Combined Data:', combinedData);
 
+                // Stale check: if another search/session-load started, discard results
+                if (mySearchGeneration !== searchGenerationId) {
+                    console.log('[Search] Stale search discarded before rendering');
+                    return;
+                }
+
                 // Parse and populate the UI with combined data
                 populateResultsFromAPI(combinedData, query);
 
@@ -1279,6 +1392,11 @@
                 // Scroll to results
                 resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
             } catch (error) {
+                // Silently ignore cancelled searches (user loaded session or started new search)
+                if (error.name === 'AbortError' || mySearchGeneration !== searchGenerationId) {
+                    console.log('[Search] Search cancelled or superseded');
+                    return;
+                }
                 console.error('Search failed:', error);
                 loadingState.classList.remove('active');
                 alert('搜尋失敗，請稍後再試。Error: ' + error.message);
@@ -2363,23 +2481,34 @@
         }
 
         // Add message to chat UI
-        function addChatMessage(role, content, referenceInfo = null) {
+        function addChatMessage(role, content, referenceInfo = null, existingMsgId = null) {
             const messageDiv = document.createElement('div');
             messageDiv.className = `chat-message ${role}`;
 
+            // Assign unique ID to message
+            const msgId = existingMsgId || `msg-${Date.now()}-${messageIdCounter++}`;
+            messageDiv.setAttribute('data-msg-id', msgId);
+
             const headerText = role === 'user' ? '你' : 'AI 助理';
 
-            // For assistant messages, convert markdown links and render HTML
+            // For assistant messages, use marked.js for full Markdown rendering
+            // For user messages, escape HTML for safety
             let formattedContent = content;
             if (role === 'assistant') {
-                formattedContent = convertMarkdownToHtml(content);
+                formattedContent = marked.parse(content);
             } else {
                 formattedContent = escapeHTML(content);
             }
 
+            // Check if this message is already pinned
+            const isPinned = pinnedMessages.some(p => p.msgId === msgId);
+
             let messageHTML = `
                 <div class="chat-message-header">${headerText}</div>
-                <div class="chat-message-bubble">${formattedContent}</div>
+                <div class="chat-message-content-wrapper">
+                    <div class="chat-message-bubble">${formattedContent}</div>
+                    <button class="chat-message-pin ${isPinned ? 'pinned' : ''}" data-msg-id="${msgId}" title="${isPinned ? '取消釘選' : '釘選訊息'}">📌</button>
+                </div>
             `;
 
             if (referenceInfo && role === 'assistant') {
@@ -2389,12 +2518,328 @@
             messageDiv.innerHTML = messageHTML;
             chatMessagesEl.appendChild(messageDiv);
 
-            // Store in chat history
-            chatHistory.push({ role, content, timestamp: Date.now() });
+            // Add click handler for pin button
+            const pinBtn = messageDiv.querySelector('.chat-message-pin');
+            pinBtn.addEventListener('click', () => togglePinMessage(msgId, content, role));
+
+            // Store in chat history with ID
+            chatHistory.push({ role, content, timestamp: Date.now(), msgId });
 
             // Scroll to bottom
             chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+
+            return msgId;
         }
+
+        // ==================== PIN MESSAGE FUNCTIONS ====================
+
+        // Toggle pin state for a message
+        function togglePinMessage(msgId, content, role) {
+            const existingIndex = pinnedMessages.findIndex(p => p.msgId === msgId);
+
+            if (existingIndex !== -1) {
+                // Unpin
+                pinnedMessages.splice(existingIndex, 1);
+                console.log('[Pin] Unpinned message:', msgId);
+            } else {
+                // Pin - enforce max limit
+                if (pinnedMessages.length >= MAX_PINNED_MESSAGES) {
+                    // Remove oldest pinned message
+                    pinnedMessages.shift();
+                }
+                pinnedMessages.push({
+                    msgId,
+                    content,
+                    role,
+                    pinnedAt: Date.now()
+                });
+                console.log('[Pin] Pinned message:', msgId);
+            }
+
+            // Update pin button state
+            updatePinButtonState(msgId);
+
+            // Render the banner
+            renderPinnedBanner();
+
+            // Auto-save session
+            saveCurrentSession();
+        }
+
+        // Update the visual state of a pin button
+        function updatePinButtonState(msgId) {
+            const isPinned = pinnedMessages.some(p => p.msgId === msgId);
+            const messageEl = document.querySelector(`[data-msg-id="${msgId}"]`);
+            if (messageEl) {
+                const pinBtn = messageEl.querySelector('.chat-message-pin');
+                if (pinBtn) {
+                    pinBtn.classList.toggle('pinned', isPinned);
+                    pinBtn.title = isPinned ? '取消釘選' : '釘選訊息';
+                }
+            }
+        }
+
+        // Render the pinned messages banner
+        function renderPinnedBanner() {
+            const banner = document.getElementById('pinnedBanner');
+            const bannerText = document.getElementById('pinnedBannerText');
+            const bannerCount = document.getElementById('pinnedBannerCount');
+            const bannerToggle = document.getElementById('pinnedBannerToggle');
+            const bannerDropdown = document.getElementById('pinnedBannerDropdown');
+
+            if (!banner) return;
+
+            if (pinnedMessages.length === 0) {
+                banner.style.display = 'none';
+                return;
+            }
+
+            banner.style.display = 'block';
+
+            // Show the latest pinned message
+            const latestPinned = pinnedMessages[pinnedMessages.length - 1];
+            const truncatedText = truncateText(latestPinned.content, 50);
+            bannerText.textContent = truncatedText;
+
+            // Update count
+            bannerCount.textContent = pinnedMessages.length;
+            bannerToggle.style.display = pinnedMessages.length > 1 ? 'flex' : 'none';
+
+            // Render dropdown items
+            bannerDropdown.innerHTML = '';
+            pinnedMessages.slice().reverse().forEach((pinned, idx) => {
+                const item = document.createElement('div');
+                item.className = 'pinned-dropdown-item';
+
+                const roleLabel = pinned.role === 'user' ? '你' : 'AI';
+                const truncated = truncateText(pinned.content, 40);
+
+                item.innerHTML = `
+                    <span class="pinned-dropdown-role">${roleLabel}：</span>
+                    <span class="pinned-dropdown-text">${escapeHTML(truncated)}</span>
+                    <button class="pinned-dropdown-unpin" data-msg-id="${pinned.msgId}" title="取消釘選">✕</button>
+                `;
+
+                // Click to scroll to message (dropdown stays open)
+                item.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (!e.target.classList.contains('pinned-dropdown-unpin')) {
+                        console.log('[Pin] Scrolling to message:', pinned.msgId);
+                        scrollToMessage(pinned.msgId);
+                        // Don't close dropdown - user can close manually
+                    }
+                });
+
+                // Unpin button
+                const unpinBtn = item.querySelector('.pinned-dropdown-unpin');
+                unpinBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    togglePinMessage(pinned.msgId, pinned.content, pinned.role);
+                });
+
+                bannerDropdown.appendChild(item);
+            });
+        }
+
+        // Truncate text to specified length
+        function truncateText(text, maxLength) {
+            // Get first line only
+            const firstLine = text.split('\n')[0];
+            if (firstLine.length <= maxLength) return firstLine;
+            return firstLine.substring(0, maxLength) + '...';
+        }
+
+        // Scroll to a specific message (only scroll chat container, not the page)
+        function scrollToMessage(msgId) {
+            console.log('[Pin] Looking for message:', msgId);
+            // Use specific selector to find chat-message div, not dropdown buttons
+            const messageEl = document.querySelector(`.chat-message[data-msg-id="${msgId}"]`);
+            const chatContainer = document.getElementById('chatMessages');
+            console.log('[Pin] Found element:', messageEl);
+
+            if (messageEl && chatContainer) {
+                // Calculate scroll position within the chat container
+                const containerRect = chatContainer.getBoundingClientRect();
+                const messageRect = messageEl.getBoundingClientRect();
+                const scrollOffset = messageRect.top - containerRect.top + chatContainer.scrollTop;
+
+                // Smooth scroll only the chat container
+                chatContainer.scrollTo({
+                    top: scrollOffset,
+                    behavior: 'smooth'
+                });
+
+                // Highlight briefly
+                messageEl.classList.add('highlight');
+                setTimeout(() => messageEl.classList.remove('highlight'), 2000);
+            } else {
+                console.warn('[Pin] Message element not found for id:', msgId);
+            }
+        }
+
+        // Toggle pinned dropdown visibility
+        function togglePinnedDropdown() {
+            console.log('[Pin] Toggling dropdown');
+            const dropdown = document.getElementById('pinnedBannerDropdown');
+            const arrow = document.querySelector('.pinned-banner-arrow');
+            if (dropdown) {
+                const isVisible = dropdown.classList.toggle('visible');
+                if (arrow) {
+                    arrow.textContent = isVisible ? '▲' : '▼';
+                }
+            }
+        }
+
+        // Close pinned dropdown
+        function closePinnedDropdown() {
+            const dropdown = document.getElementById('pinnedBannerDropdown');
+            const arrow = document.querySelector('.pinned-banner-arrow');
+            if (dropdown) {
+                dropdown.classList.remove('visible');
+                if (arrow) arrow.textContent = '▼';
+            }
+        }
+
+        // Initialize pinned banner event listeners
+        function initPinnedBanner() {
+            console.log('[Pin] Initializing pinned banner');
+            const bannerToggle = document.getElementById('pinnedBannerToggle');
+            const bannerCurrent = document.getElementById('pinnedBannerCurrent');
+            console.log('[Pin] bannerToggle:', bannerToggle);
+            console.log('[Pin] bannerCurrent:', bannerCurrent);
+
+            if (bannerToggle) {
+                bannerToggle.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    togglePinnedDropdown();
+                });
+            }
+
+            // Click on banner text to scroll to latest pinned
+            if (bannerCurrent) {
+                bannerCurrent.addEventListener('click', (e) => {
+                    console.log('[Pin] Banner clicked, target:', e.target);
+                    if (!e.target.closest('.pinned-banner-toggle')) {
+                        if (pinnedMessages.length > 0) {
+                            const latestPinned = pinnedMessages[pinnedMessages.length - 1];
+                            console.log('[Pin] Scrolling to latest pinned:', latestPinned.msgId);
+                            scrollToMessage(latestPinned.msgId);
+                        }
+                    }
+                });
+            }
+
+            // Dropdown only closes when toggle button is clicked manually
+            // (removed auto-close on outside click)
+        }
+
+        // ==================== END PIN MESSAGE FUNCTIONS ====================
+
+        // ==================== PIN NEWS CARD FUNCTIONS ====================
+
+        // Toggle pin state for a news card
+        function togglePinNewsCard(url, title) {
+            const existingIndex = pinnedNewsCards.findIndex(p => p.url === url);
+
+            if (existingIndex !== -1) {
+                // Unpin
+                pinnedNewsCards.splice(existingIndex, 1);
+                console.log('[PinNews] Unpinned news:', url);
+            } else {
+                // Pin - enforce max limit
+                if (pinnedNewsCards.length >= MAX_PINNED_NEWS) {
+                    // Remove oldest pinned news
+                    pinnedNewsCards.shift();
+                }
+                pinnedNewsCards.push({
+                    url,
+                    title,
+                    pinnedAt: Date.now()
+                });
+                console.log('[PinNews] Pinned news:', url);
+            }
+
+            // Update all pin button states for this URL
+            updateNewsCardPinState(url);
+
+            // Render the pinned news list
+            renderPinnedNewsList();
+
+            // Auto-save session
+            saveCurrentSession();
+        }
+
+        // Update the visual state of pin buttons for a specific URL
+        function updateNewsCardPinState(url) {
+            const isPinned = pinnedNewsCards.some(p => p.url === url);
+            const cards = document.querySelectorAll(`.news-card[data-url="${CSS.escape(url)}"]`);
+            cards.forEach(card => {
+                const pinBtn = card.querySelector('.news-card-pin');
+                if (pinBtn) {
+                    pinBtn.classList.toggle('pinned', isPinned);
+                    pinBtn.title = isPinned ? '取消釘選' : '釘選新聞';
+                }
+            });
+        }
+
+        // Render the pinned news list in the right tab panel
+        function renderPinnedNewsList() {
+            const listEl = document.getElementById('pinnedNewsList');
+            if (!listEl) return;
+
+            if (pinnedNewsCards.length === 0) {
+                listEl.innerHTML = '<div class="pinned-news-empty">尚未釘選任何新聞</div>';
+                return;
+            }
+
+            listEl.innerHTML = pinnedNewsCards.map(news => `
+                <div class="pinned-news-item" data-url="${escapeHTML(news.url)}">
+                    <span class="pinned-news-item-icon">📌</span>
+                    <span class="pinned-news-item-title">${escapeHTML(news.title)}</span>
+                    <button class="pinned-news-item-unpin" title="取消釘選">✕</button>
+                </div>
+            `).join('');
+
+            // Add event listeners
+            listEl.querySelectorAll('.pinned-news-item').forEach(item => {
+                const url = item.dataset.url;
+                const news = pinnedNewsCards.find(n => n.url === url);
+
+                // Click to open link
+                item.addEventListener('click', (e) => {
+                    if (!e.target.classList.contains('pinned-news-item-unpin')) {
+                        window.open(url, '_blank');
+                    }
+                });
+
+                // Unpin button
+                const unpinBtn = item.querySelector('.pinned-news-item-unpin');
+                if (unpinBtn && news) {
+                    unpinBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        togglePinNewsCard(news.url, news.title);
+                    });
+                }
+            });
+        }
+
+        // Event delegation for news card pin buttons
+        document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('news-card-pin')) {
+                e.preventDefault();
+                e.stopPropagation();
+                const card = e.target.closest('.news-card');
+                if (card) {
+                    const url = card.dataset.url;
+                    const title = card.dataset.title;
+                    if (url && title) {
+                        togglePinNewsCard(url, title);
+                    }
+                }
+            }
+        });
+
+        // ==================== END PIN NEWS CARD FUNCTIONS ====================
 
         // Add clarification message to chat (conversational)
         function addClarificationMessage(clarificationData, originalQuery, eventSource, savedQuery) {
@@ -2793,6 +3238,7 @@
         // Function to delete a saved session
         function deleteSavedSession(sessionId) {
             console.log('Deleting session:', sessionId);
+            cancelActiveSearch();
 
             // Remove from savedSessions array
             savedSessions = savedSessions.filter(s => s.id !== sessionId);
@@ -2807,19 +3253,59 @@
                 sessionHistory = [];
                 chatHistory = [];
                 accumulatedArticles = [];
+                pinnedMessages = [];  // Clear pinned messages
+                pinnedNewsCards = [];  // Clear pinned news cards
                 currentResearchReport = null;  // Clear Deep Research report
                 currentConversationId = null;  // Clear conversation ID
 
-                // Clear UI
-                resultsSection.style.display = 'none';
-                initialState.style.display = 'flex';
+                // Clear UI — match resetConversation() pattern
                 searchInput.value = '';
-                renderConversationHistory();
+                listView.innerHTML = '';
+                timelineView.innerHTML = '';
+                initialState.style.display = 'block';
+                resultsSection.classList.remove('active');
+                resultsSection.style.display = '';
 
-                // Switch back to search mode if in chat mode
-                if (currentMode === 'chat') {
-                    switchMode('search');
+                // Close folder page if open
+                const folderPageEl = document.getElementById('folderPage');
+                if (folderPageEl) folderPageEl.style.display = 'none';
+                if (typeof _preFolderState !== 'undefined') _preFolderState = null;
+
+                // Move searchContainer back to main container if it was inside chatInputContainer
+                if (searchContainer.parentElement === chatInputContainer) {
+                    const mainContainer = document.querySelector('main .container');
+                    const loadingStateEl = document.getElementById('loadingState');
+                    mainContainer.insertBefore(searchContainer, loadingStateEl);
                 }
+                searchContainer.style.display = 'block';
+                chatInputContainer.style.display = 'none';
+                chatContainer.style.display = 'none';
+                chatContainer.classList.remove('active');
+                chatMessagesEl.innerHTML = '';
+
+                // Clear conversation history display
+                const convHistoryEl = document.getElementById('conversationHistory');
+                if (convHistoryEl) convHistoryEl.style.display = 'none';
+
+                // Hide pinned banner
+                const pinnedBanner = document.getElementById('pinnedBanner');
+                if (pinnedBanner) pinnedBanner.style.display = 'none';
+
+                // Reset pinned news list
+                const pinnedNewsList = document.getElementById('pinnedNewsList');
+                if (pinnedNewsList) {
+                    pinnedNewsList.innerHTML = '<div class="pinned-news-empty">尚未釘選任何新聞</div>';
+                }
+
+                // Reset to search mode
+                currentMode = 'search';
+                btnSearch.textContent = '搜尋';
+                searchInput.placeholder = '問我任何新聞相關問題，例如：最近台灣資安政策有什麼進展？';
+                modeButtons.forEach(btn => btn.classList.remove('active'));
+                if (modeButtons[0]) modeButtons[0].classList.add('active');
+                modeButtonsInline.forEach(btn => btn.classList.remove('active'));
+                const searchInlineBtn = document.querySelector('.mode-btn-inline[data-mode="search"]');
+                if (searchInlineBtn) searchInlineBtn.classList.add('active');
             }
 
             // Re-render the sessions list
@@ -2889,6 +3375,7 @@
         // Function to load a saved session
         function loadSavedSession(session) {
             console.log('Loading saved session:', session);
+            cancelActiveSearch();
 
             // Track this session's ID to prevent duplicate saves
             currentLoadedSessionId = session.id;
@@ -2900,12 +3387,38 @@
             // Restore chat history and accumulated articles (if they exist)
             chatHistory = session.chatHistory ? [...session.chatHistory] : [];
             accumulatedArticles = session.accumulatedArticles ? [...session.accumulatedArticles] : [];
+            pinnedMessages = session.pinnedMessages ? [...session.pinnedMessages] : [];
+            pinnedNewsCards = session.pinnedNewsCards ? [...session.pinnedNewsCards] : [];
 
             // Restore Deep Research report for follow-up Q&A
             currentResearchReport = session.researchReport ? { ...session.researchReport } : null;
             if (currentResearchReport) {
                 console.log('[Session] Restored research report:', currentResearchReport.report?.substring(0, 100) + '...');
             }
+
+            // 先清除舊的搜尋結果 UI
+            listView.innerHTML = '';
+            timelineView.innerHTML = '';
+            const aiSummarySec = document.getElementById('aiSummarySection');
+            if (aiSummarySec) aiSummarySec.style.display = 'none';
+            chatMessagesEl.innerHTML = '';
+
+            // Reset to search mode first (ensures searchContainer is in correct position)
+            if (searchContainer.parentElement === chatInputContainer) {
+                const mainContainer = document.querySelector('main .container');
+                const loadingStateEl = document.getElementById('loadingState');
+                mainContainer.insertBefore(searchContainer, loadingStateEl);
+            }
+            chatInputContainer.style.display = 'none';
+            chatContainer.classList.remove('active');
+            currentMode = 'search';
+            btnSearch.textContent = '搜尋';
+            searchInput.placeholder = '問我任何新聞相關問題，例如：最近台灣資安政策有什麼進展？';
+            modeButtons.forEach(btn => btn.classList.remove('active'));
+            if (modeButtons[0]) modeButtons[0].classList.add('active');
+            modeButtonsInline.forEach(btn => btn.classList.remove('active'));
+            const _searchInlineBtn = document.querySelector('.mode-btn-inline[data-mode="search"]');
+            if (_searchInlineBtn) _searchInlineBtn.classList.add('active');
 
             // Render the last query's results
             if (sessionHistory.length > 0) {
@@ -2921,31 +3434,49 @@
                 console.log(`Restoring ${chatHistory.length} chat messages`);
                 chatMessagesEl.innerHTML = ''; // Clear existing messages
 
-                // Re-render all chat messages
+                // Re-render all chat messages with pin buttons
                 chatHistory.forEach(msg => {
                     const messageDiv = document.createElement('div');
                     messageDiv.className = `chat-message ${msg.role}`;
 
+                    // Use existing msgId or generate one for legacy messages
+                    const msgId = msg.msgId || `msg-${msg.timestamp}-${Math.random().toString(36).substr(2, 9)}`;
+                    messageDiv.setAttribute('data-msg-id', msgId);
+
                     const headerText = msg.role === 'user' ? '你' : 'AI 助理';
 
                     // Format content based on role
+                    // Use marked.js for assistant messages, escape HTML for user messages
                     let formattedContent = msg.content;
                     if (msg.role === 'assistant') {
-                        formattedContent = convertMarkdownToHtml(msg.content);
+                        formattedContent = marked.parse(msg.content);
                     } else {
                         formattedContent = escapeHTML(msg.content);
                     }
 
+                    // Check if this message is pinned
+                    const isPinned = pinnedMessages.some(p => p.msgId === msgId);
+
                     messageDiv.innerHTML = `
                         <div class="chat-message-header">${headerText}</div>
-                        <div class="chat-message-bubble">${formattedContent}</div>
+                        <div class="chat-message-content-wrapper">
+                            <div class="chat-message-bubble">${formattedContent}</div>
+                            <button class="chat-message-pin ${isPinned ? 'pinned' : ''}" data-msg-id="${msgId}" title="${isPinned ? '取消釘選' : '釘選訊息'}">📌</button>
+                        </div>
                     `;
+
+                    // Add click handler for pin button
+                    const pinBtn = messageDiv.querySelector('.chat-message-pin');
+                    pinBtn.addEventListener('click', () => togglePinMessage(msgId, msg.content, msg.role));
 
                     chatMessagesEl.appendChild(messageDiv);
                 });
 
                 // Show chat container if we restored messages
                 chatContainer.classList.add('active');
+
+                // Render pinned banner
+                renderPinnedBanner();
 
                 // Optionally switch to chat mode
                 currentMode = 'chat';
@@ -2961,9 +3492,19 @@
                 chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
             }
 
+            // Render pinned news list (outside of chat block since news cards are separate)
+            renderPinnedNewsList();
+
             // Show results section and hide initial state
             initialState.style.display = 'none';
+            resultsSection.style.display = '';  // Clear inline style so CSS class takes effect
             resultsSection.classList.add('active');
+            // 確保資料夾頁面關閉（不走 hideFolderPage 以免覆蓋我們剛設好的狀態）
+            const _fp = document.getElementById('folderPage');
+            if (_fp) _fp.style.display = 'none';
+            _preFolderState = null;
+            // 確保搜尋容器可見
+            document.getElementById('searchContainer').style.display = 'block';
 
             // Scroll to results
             resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -3666,10 +4207,579 @@
             return texts[status] || status;
         }
 
+        // ==================== LEFT SIDEBAR SESSION LIST ====================
+
+        function renderLeftSidebarSessions() {
+            const container = document.getElementById('leftSidebarSessions');
+            if (!container) return;
+
+            if (savedSessions.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            // 最新的在最上面，最多顯示 15 條
+            const recent = savedSessions.slice().reverse().slice(0, 15);
+            container.innerHTML = recent.map(session => {
+                const isActive = currentLoadedSessionId === session.id;
+                return `<div class="left-sidebar-session-item${isActive ? ' active' : ''}" data-sidebar-session-id="${session.id}">
+                    <span class="left-sidebar-session-title">${escapeHTML(session.title)}</span>
+                    <button class="left-sidebar-session-menu-btn" data-menu-session-id="${session.id}">&#8943;</button>
+                    <div class="left-sidebar-session-dropdown" data-dropdown-session-id="${session.id}">
+                        <button class="left-sidebar-session-dropdown-item" data-action="rename" data-session-id="${session.id}">重新命名</button>
+                        <button class="left-sidebar-session-dropdown-item danger" data-action="delete" data-session-id="${session.id}">刪除</button>
+                    </div>
+                </div>`;
+            }).join('');
+
+            // Click on session item to load (ignore menu/dropdown clicks)
+            container.querySelectorAll('.left-sidebar-session-item').forEach(item => {
+                item.addEventListener('click', (e) => {
+                    if (e.target.closest('.left-sidebar-session-menu-btn') || e.target.closest('.left-sidebar-session-dropdown')) return;
+                    const sessionId = parseInt(item.dataset.sidebarSessionId);
+                    const session = savedSessions.find(s => s.id === sessionId);
+                    if (session) {
+                        loadSavedSession(session);
+                    }
+                });
+            });
+
+            // "..." menu button toggle
+            container.querySelectorAll('.left-sidebar-session-menu-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const sid = btn.dataset.menuSessionId;
+                    const dropdown = container.querySelector(`.left-sidebar-session-dropdown[data-dropdown-session-id="${sid}"]`);
+                    // Close all other dropdowns first
+                    container.querySelectorAll('.left-sidebar-session-dropdown.visible').forEach(d => {
+                        if (d !== dropdown) d.classList.remove('visible');
+                    });
+                    dropdown.classList.toggle('visible');
+                });
+            });
+
+            // Dropdown actions (rename / delete)
+            container.querySelectorAll('.left-sidebar-session-dropdown-item').forEach(actionBtn => {
+                actionBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const action = actionBtn.dataset.action;
+                    const sessionId = parseInt(actionBtn.dataset.sessionId);
+                    if (action === 'delete') {
+                        deleteSavedSession(sessionId);
+                    } else if (action === 'rename') {
+                        startSidebarSessionRename(sessionId);
+                    }
+                });
+            });
+        }
+
+        // Close sidebar session dropdowns on outside click
+        document.addEventListener('click', () => {
+            const container = document.getElementById('leftSidebarSessions');
+            if (container) {
+                container.querySelectorAll('.left-sidebar-session-dropdown.visible').forEach(d => {
+                    d.classList.remove('visible');
+                });
+            }
+        });
+
+        // Inline rename for sidebar sessions
+        function startSidebarSessionRename(sessionId) {
+            const container = document.getElementById('leftSidebarSessions');
+            if (!container) return;
+            const item = container.querySelector(`.left-sidebar-session-item[data-sidebar-session-id="${sessionId}"]`);
+            if (!item) return;
+
+            const session = savedSessions.find(s => s.id === sessionId);
+            if (!session) return;
+
+            // Close dropdown
+            const dropdown = item.querySelector('.left-sidebar-session-dropdown');
+            if (dropdown) dropdown.classList.remove('visible');
+
+            // Replace title span with input
+            const titleSpan = item.querySelector('.left-sidebar-session-title');
+            const menuBtn = item.querySelector('.left-sidebar-session-menu-btn');
+            if (menuBtn) menuBtn.style.display = 'none';
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'left-sidebar-session-rename';
+            input.value = session.title;
+            titleSpan.replaceWith(input);
+            input.focus();
+            input.select();
+
+            function commitRename() {
+                const newName = input.value.trim();
+                if (newName && newName !== session.title) {
+                    session.title = newName;
+                    session.updatedAt = Date.now();
+                    localStorage.setItem('taiwanNewsSavedSessions', JSON.stringify(savedSessions));
+                    // Also refresh history panel if open
+                    if (typeof renderSavedSessions === 'function') renderSavedSessions();
+                }
+                renderLeftSidebarSessions();
+            }
+
+            input.addEventListener('blur', commitRename);
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { input.blur(); }
+                if (e.key === 'Escape') {
+                    input.removeEventListener('blur', commitRename);
+                    renderLeftSidebarSessions();
+                }
+            });
+        }
+
+        // Patch saveCurrentSession to also refresh sidebar list
+        const _origSaveCurrentSession = saveCurrentSession;
+        saveCurrentSession = function() {
+            _origSaveCurrentSession();
+            renderLeftSidebarSessions();
+        };
+
+        // Patch deleteSavedSession to also refresh sidebar list
+        const _origDeleteSavedSession = deleteSavedSession;
+        deleteSavedSession = function(sessionId) {
+            _origDeleteSavedSession(sessionId);
+            renderLeftSidebarSessions();
+        };
+
+        // Initial render
+        renderLeftSidebarSessions();
+
+        // ==================== FOLDER/PROJECT SYSTEM ====================
+
+        // Folder data model - persisted in localStorage
+        let folders = [];
+        try {
+            const storedFolders = localStorage.getItem('taiwanNewsFolders');
+            if (storedFolders) {
+                folders = JSON.parse(storedFolders);
+                console.log(`[Folder] Loaded ${folders.length} folders from localStorage`);
+            }
+        } catch (e) {
+            console.error('[Folder] Failed to load folders from localStorage:', e);
+        }
+
+        let currentFolderSort = 'all';
+        let currentFolderFilter = '';
+        let currentOpenFolderId = null; // Which folder detail is open
+        let openDropdownFolderId = null; // Which folder's context menu is open
+
+        function saveFolders() {
+            localStorage.setItem('taiwanNewsFolders', JSON.stringify(folders));
+        }
+
+        function createFolder(name) {
+            const folder = {
+                id: Date.now(),
+                name: name || '未命名資料夾',
+                sessionIds: [],
+                createdAt: Date.now(),
+                updatedAt: Date.now()
+            };
+            folders.push(folder);
+            saveFolders();
+            renderFolderGrid();
+            return folder;
+        }
+
+        function renameFolder(folderId, newName) {
+            const folder = folders.find(f => f.id === folderId);
+            if (!folder) return;
+            folder.name = newName;
+            folder.updatedAt = Date.now();
+            saveFolders();
+            renderFolderGrid();
+        }
+
+        function deleteFolder(folderId) {
+            folders = folders.filter(f => f.id !== folderId);
+            saveFolders();
+            if (currentOpenFolderId === folderId) {
+                currentOpenFolderId = null;
+                showFolderMain();
+            }
+            renderFolderGrid();
+        }
+
+        function addSessionToFolder(folderId, sessionId) {
+            const folder = folders.find(f => f.id === folderId);
+            if (!folder) return;
+            if (folder.sessionIds.includes(sessionId)) return; // already in folder
+            folder.sessionIds.push(sessionId);
+            folder.updatedAt = Date.now();
+            saveFolders();
+        }
+
+        function removeSessionFromFolder(folderId, sessionId) {
+            const folder = folders.find(f => f.id === folderId);
+            if (!folder) return;
+            folder.sessionIds = folder.sessionIds.filter(id => id !== sessionId);
+            folder.updatedAt = Date.now();
+            saveFolders();
+        }
+
+        // -- View switching: show folder page, hide other main content --
+
+        // 記住進入資料夾頁前的 UI 狀態，離開時完整還原
+        let _preFolderState = null;
+
+        function showFolderPage() {
+            const ids = ['initialState', 'searchContainer', 'resultsSection', 'loadingState'];
+            // 快照目前每個元素的 display 值
+            _preFolderState = {};
+            ids.forEach(id => {
+                const el = document.getElementById(id);
+                _preFolderState[id] = el ? el.style.display : '';
+            });
+
+            // 隱藏主要內容，顯示資料夾頁
+            ids.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = 'none';
+            });
+            document.getElementById('folderPage').style.display = 'block';
+
+            showFolderMain();
+            renderFolderGrid();
+
+            // Collapse left sidebar
+            leftSidebar.classList.remove('visible');
+            btnExpandSidebar.classList.remove('hidden');
+        }
+
+        function hideFolderPage() {
+            document.getElementById('folderPage').style.display = 'none';
+            currentOpenFolderId = null;
+
+            // 還原進入前的 UI 狀態
+            if (_preFolderState) {
+                Object.keys(_preFolderState).forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.style.display = _preFolderState[id];
+                });
+                _preFolderState = null;
+            } else {
+                // fallback：顯示首頁
+                document.getElementById('initialState').style.display = 'block';
+                document.getElementById('searchContainer').style.display = 'block';
+            }
+        }
+
+        function showFolderMain() {
+            document.getElementById('folderMain').style.display = 'block';
+            document.getElementById('folderDetail').style.display = 'none';
+            currentOpenFolderId = null;
+        }
+
+        function showFolderDetail(folderId) {
+            const folder = folders.find(f => f.id === folderId);
+            if (!folder) return;
+
+            currentOpenFolderId = folderId;
+            document.getElementById('folderMain').style.display = 'none';
+            document.getElementById('folderDetail').style.display = 'block';
+            document.getElementById('folderDetailTitle').textContent = folder.name;
+
+            renderFolderDetailSessions(folder);
+        }
+
+        // -- Rendering --
+
+        function getTimeAgo(timestamp) {
+            const diff = Date.now() - timestamp;
+            const minutes = Math.floor(diff / 60000);
+            if (minutes < 1) return '剛剛';
+            if (minutes < 60) return `${minutes} 分鐘前`;
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) return `${hours} 小時前`;
+            const days = Math.floor(hours / 24);
+            return `${days} 天前`;
+        }
+
+        function getSortedFolders() {
+            let list = [...folders];
+
+            // Apply search filter
+            if (currentFolderFilter) {
+                list = list.filter(f => f.name.toLowerCase().includes(currentFolderFilter.toLowerCase()));
+            }
+
+            // Apply sort
+            if (currentFolderSort === 'created') {
+                list.sort((a, b) => b.createdAt - a.createdAt);
+            } else if (currentFolderSort === 'updated') {
+                list.sort((a, b) => b.updatedAt - a.updatedAt);
+            }
+            // 'all' = original order (newest last, which is push order)
+
+            return list;
+        }
+
+        function renderFolderGrid() {
+            const grid = document.getElementById('folderGrid');
+            if (!grid) return;
+
+            const sortedFolders = getSortedFolders();
+
+            if (sortedFolders.length === 0) {
+                grid.innerHTML = '<div class="folder-empty">尚未建立資料夾</div>';
+                return;
+            }
+
+            grid.innerHTML = sortedFolders.map(folder => `
+                <div class="folder-card" data-folder-id="${folder.id}">
+                    <div class="folder-card-menu">
+                        <button class="folder-card-menu-btn" data-menu-folder-id="${folder.id}">&#8942;</button>
+                        <div class="folder-card-dropdown" id="folderDropdown_${folder.id}">
+                            <button class="folder-card-dropdown-item" data-action="rename" data-folder-id="${folder.id}">重新命名</button>
+                            <button class="folder-card-dropdown-item danger" data-action="delete" data-folder-id="${folder.id}">刪除</button>
+                        </div>
+                    </div>
+                    <div class="folder-card-name" data-name-folder-id="${folder.id}">${escapeHTML(folder.name)}</div>
+                    <div class="folder-card-meta">更新時間 ${getTimeAgo(folder.updatedAt)}</div>
+                </div>
+            `).join('');
+
+            // Bind events
+            grid.querySelectorAll('.folder-card').forEach(card => {
+                const folderId = parseInt(card.dataset.folderId);
+
+                // Click card → open detail (but not if clicking menu)
+                card.addEventListener('click', (e) => {
+                    if (e.target.closest('.folder-card-menu')) return;
+                    showFolderDetail(folderId);
+                });
+
+                // Drag-and-drop: folders accept session drops
+                card.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    card.classList.add('drag-over');
+                });
+                card.addEventListener('dragleave', () => {
+                    card.classList.remove('drag-over');
+                });
+                card.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    card.classList.remove('drag-over');
+                    const sessionId = parseInt(e.dataTransfer.getData('text/session-id'));
+                    if (sessionId) {
+                        addSessionToFolder(folderId, sessionId);
+                        console.log(`[Folder] Session ${sessionId} added to folder ${folderId}`);
+                    }
+                });
+            });
+
+            // Context menu buttons
+            grid.querySelectorAll('.folder-card-menu-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const folderId = parseInt(btn.dataset.menuFolderId);
+                    toggleFolderDropdown(folderId);
+                });
+            });
+
+            // Dropdown actions
+            grid.querySelectorAll('.folder-card-dropdown-item').forEach(item => {
+                item.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const folderId = parseInt(item.dataset.folderId);
+                    const action = item.dataset.action;
+
+                    closeFolderDropdowns();
+
+                    if (action === 'rename') {
+                        startFolderRename(folderId);
+                    } else if (action === 'delete') {
+                        deleteFolder(folderId);
+                    }
+                });
+            });
+        }
+
+        function toggleFolderDropdown(folderId) {
+            const dropdown = document.getElementById(`folderDropdown_${folderId}`);
+            if (!dropdown) return;
+
+            const isVisible = dropdown.classList.contains('visible');
+            closeFolderDropdowns();
+            if (!isVisible) {
+                dropdown.classList.add('visible');
+                openDropdownFolderId = folderId;
+            }
+        }
+
+        function closeFolderDropdowns() {
+            document.querySelectorAll('.folder-card-dropdown.visible').forEach(d => {
+                d.classList.remove('visible');
+            });
+            openDropdownFolderId = null;
+        }
+
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.folder-card-menu')) {
+                closeFolderDropdowns();
+            }
+        });
+
+        function startFolderRename(folderId) {
+            const nameEl = document.querySelector(`[data-name-folder-id="${folderId}"]`);
+            if (!nameEl) return;
+
+            const folder = folders.find(f => f.id === folderId);
+            if (!folder) return;
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'folder-rename-input';
+            input.value = folder.name;
+
+            nameEl.innerHTML = '';
+            nameEl.appendChild(input);
+            input.focus();
+            input.select();
+
+            function commit() {
+                const newName = input.value.trim();
+                if (newName && newName !== folder.name) {
+                    renameFolder(folderId, newName);
+                } else {
+                    renderFolderGrid(); // restore original
+                }
+            }
+
+            input.addEventListener('blur', commit);
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    input.blur();
+                } else if (e.key === 'Escape') {
+                    input.value = folder.name; // cancel
+                    input.blur();
+                }
+            });
+        }
+
+        function renderFolderDetailSessions(folder) {
+            const container = document.getElementById('folderDetailSessions');
+            if (!container) return;
+
+            if (folder.sessionIds.length === 0) {
+                container.innerHTML = '<div class="folder-detail-empty">此資料夾尚無搜尋記錄</div>';
+                return;
+            }
+
+            // Match sessionIds to savedSessions
+            const sessions = folder.sessionIds
+                .map(id => savedSessions.find(s => s.id === id))
+                .filter(Boolean);
+
+            if (sessions.length === 0) {
+                container.innerHTML = '<div class="folder-detail-empty">此資料夾尚無搜尋記錄</div>';
+                return;
+            }
+
+            container.innerHTML = sessions.map(session => {
+                const dateStr = getTimeAgo(session.updatedAt || session.createdAt);
+                return `
+                    <div class="folder-session-item" data-session-id="${session.id}">
+                        <div class="folder-session-title">${escapeHTML(session.title)}</div>
+                        <div class="folder-session-meta">更新時間 ${dateStr}</div>
+                    </div>
+                `;
+            }).join('');
+
+            // Click session → load it
+            container.querySelectorAll('.folder-session-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const sessionId = parseInt(item.dataset.sessionId);
+                    const session = savedSessions.find(s => s.id === sessionId);
+                    if (session) {
+                        hideFolderPage();
+                        loadSavedSession(session);
+                    }
+                });
+            });
+        }
+
+        // -- Wire sidebar "開啟資料夾" button to folder page --
+        btnToggleCategories.addEventListener('click', () => {
+            showFolderPage();
+        });
+
+        // "< 回到搜尋" button on folder main page
+        document.getElementById('btnFolderBackToHome').addEventListener('click', () => {
+            hideFolderPage();
+        });
+
+        // "新增資料夾" button on folder page
+        document.getElementById('btnAddFolder').addEventListener('click', () => {
+            createFolder();
+        });
+
+        // "< 回到頁" button
+        document.getElementById('btnFolderBack').addEventListener('click', () => {
+            showFolderMain();
+        });
+
+        // Folder search input
+        document.getElementById('folderSearchInput').addEventListener('input', (e) => {
+            currentFolderFilter = e.target.value.trim();
+            renderFolderGrid();
+        });
+
+        // Folder sort tabs
+        document.querySelectorAll('.folder-sort-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.folder-sort-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                currentFolderSort = tab.dataset.sort;
+                renderFolderGrid();
+            });
+        });
+
+        // -- Drag-and-drop: make sidebar session items draggable --
+
+        function makeSidebarSessionsDraggable() {
+            // Find session items in left sidebar (the recent session titles)
+            // These are rendered in the right tab's history panel.
+            // For drag-and-drop, we make the items in the history popup draggable too.
+            document.querySelectorAll('.saved-session-item').forEach(item => {
+                const sessionId = item.querySelector('.delete-btn')?.dataset?.sessionId;
+                if (!sessionId) return;
+
+                item.setAttribute('draggable', 'true');
+                item.classList.add('session-item-draggable');
+
+                item.addEventListener('dragstart', (e) => {
+                    e.dataTransfer.setData('text/session-id', sessionId);
+                    item.classList.add('dragging');
+                });
+
+                item.addEventListener('dragend', () => {
+                    item.classList.remove('dragging');
+                });
+            });
+        }
+
+        // Patch renderSavedSessions to add drag support after rendering
+        const _originalRenderSavedSessions = renderSavedSessions;
+        renderSavedSessions = function() {
+            _originalRenderSavedSessions();
+            makeSidebarSessionsDraggable();
+        };
+
+        // ==================== END FOLDER/PROJECT SYSTEM ====================
+
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', () => {
             loadUserFiles();
             loadSiteFilters();
             updateSidebarVisibility();
+            initPinnedBanner();
         });
 

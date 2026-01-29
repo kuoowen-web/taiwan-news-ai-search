@@ -183,6 +183,11 @@
 - Free Conversation Mode（Deep Research 後續 Q&A）
 - Phase 2 CoV（Chain of Verification 事實查核）
 
+### ✅ Track I：M0 Indexing 資料工廠
+- Crawler 系統（6 個 Parser）
+- Indexing Pipeline（完整模組）
+- CLI 工具
+
 ---
 
 *更新：2026-01-28*

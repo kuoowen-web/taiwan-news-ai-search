@@ -22,6 +22,8 @@
 
 | 狀態區域               | 主要檔案                                                       |
 | ------------------ | ---------------------------------------------------------- |
+| **Crawler**        | `crawler/core/engine.py`, `crawler/parsers/*.py`           |
+| **Indexing**       | `indexing/pipeline.py`, `indexing/chunking_engine.py`      |
 | Server Startup     | `webserver/aiohttp_server.py`                              |
 | Connection Layer   | `webserver/middleware/`, `chat/websocket.py`               |
 | Request Processing | `core/baseHandler.py`, `core/state.py`                     |
@@ -84,7 +86,7 @@
 
 | 模組                     | 狀態      | 說明                                   |
 | ---------------------- | ------- | ------------------------------------ |
-| **M0: Indexing**       | 🔴 規劃中  | 資料工廠（Crawler、Quality Gate、NER）       |
+| **M0: Indexing**       | 🟢 完成   | Crawler (6 Parser) + Indexing Pipeline |
 | **M1: Input**          | 🟡 部分完成 | Query Decomposition ✅ / Guardrails ❌ |
 | **M2: Retrieval**      | 🟡 部分完成 | Internal Search ✅ / Web Search ❌     |
 | **M3: Ranking**        | 🟢 完成   | BM25 + XGBoost + MMR                 |
@@ -100,6 +102,7 @@
 
 ### 已完成（2026-01）
 
+✅ **M0 Indexing 資料工廠**（Crawler 6 Parser + Indexing Pipeline）
 ✅ Reasoning 系統（Actor-Critic、4 個 agents、幻覺防護）
 ✅ Deep Research（時間範圍、澄清、引用）
 ✅ XGBoost ML Ranking（Phase A/B/C）

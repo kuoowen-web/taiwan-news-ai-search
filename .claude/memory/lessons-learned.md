@@ -85,6 +85,13 @@
 **檔案**：`core/query_logger.py`
 **日期**：2025-11
 
+### SQLite + asyncio 線程安全
+**問題**：使用 `run_in_executor()` 從不同線程存取 SQLite 時報錯 `SQLite objects created in a thread can only be used in that same thread`
+**解決方案**：`sqlite3.connect(path, check_same_thread=False)`
+**信心**：中
+**檔案**：`code/python/indexing/dual_storage.py`
+**日期**：2026-01
+
 ---
 
 ## 開發環境 / 工具
@@ -97,6 +104,25 @@
 **信心**：高
 **檔案**：專案全域
 **日期**：2025-12
+
+### aiohttp vs curl_cffi Response API 差異
+**問題**：Crawler 需要同時支援 aiohttp 和 curl_cffi（繞過 WAF），但兩者 Response 物件 API 不同：
+- HTTP 狀態碼：aiohttp 用 `.status`，curl_cffi 用 `.status_code`
+- Response body：aiohttp 的 `.text()` 是 async，curl_cffi 的 `.text` 是 sync 屬性
+**解決方案**：使用 getattr 兼容模式
+```python
+# 狀態碼
+status = getattr(response, 'status_code', None) or getattr(response, 'status', 0)
+
+# Response text
+if hasattr(response, 'text') and callable(response.text):
+    html = await response.text()
+else:
+    html = response.text
+```
+**信心**：高
+**檔案**：`code/python/crawler/parsers/einfo_parser.py`、`esg_businesstoday_parser.py`
+**日期**：2026-01
 
 ---
 

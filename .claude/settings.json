@@ -1,0 +1,68 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Check the input JSON. If stop_hook_active is true, respond {\"ok\": true}. If stop_hook_active is false, respond {\"ok\": false, \"reason\": \"Session ending. If this conversation resolved non-trivial problems (bug fixes, architecture, optimization, debugging), please run /learn to record lessons to .claude/memory/lessons-learned.md before ending.\"}."
+          },
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/tools/indexer.py\" --index 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/scripts/suggest-compact.js\" --reset 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'STOP: 請使用 python tools/indexer.py --search 而非 Grep。索引系統使用 SQLite FTS5，回傳更精準的結果且節省 Token。' >&2 && exit 2"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/scripts/suggest-compact.js\" 2>/dev/null || true"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/scripts/py-compile-check.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "TodoWrite",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/scripts/suggest-compact.js\" --milestone 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
+  }
+}

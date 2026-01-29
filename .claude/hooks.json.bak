@@ -9,6 +9,38 @@
         {
           "type": "prompt",
           "message": "Session 即將結束。如果這次對話有解決非平凡的問題（bug 修復、效能優化、踩坑經驗），請執行 /learn 記錄到 lessons-learned.md。"
+        },
+        {
+          "type": "command",
+          "command": "python tools/indexer.py --index"
+        }
+      ]
+    },
+    {
+      "matcher": {
+        "type": "event",
+        "event": "PreCompact"
+      },
+      "hooks": [
+        {
+          "type": "prompt",
+          "message": "Context 即將被壓縮！請先執行以下步驟保存狀態：\n\n1. 更新 .claude/CONTEXT.md（目前狀態、進行中的工作、下一步）\n2. 如有重要發現，執行 /learn 記錄 lessons\n3. 確認 TodoWrite 已更新目前進度\n4. 執行 /checkpoint 建立檢查點（可選）\n\n完成後再繼續，確保重要 context 不會丟失。"
+        },
+        {
+          "type": "command",
+          "command": "node .claude/scripts/suggest-compact.js --reset"
+        }
+      ]
+    },
+    {
+      "matcher": {
+        "type": "event",
+        "event": "PostToolUse"
+      },
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node .claude/scripts/suggest-compact.js 2>/dev/null || true"
         }
       ]
     },
@@ -47,6 +79,18 @@
         {
           "type": "command",
           "command": "python -m py_compile \"$CLAUDE_FILE_PATH\" 2>&1 || echo '[Hook] Python 語法錯誤，請修正'"
+        }
+      ]
+    },
+    {
+      "matcher": {
+        "type": "tool",
+        "tool": "TodoWrite"
+      },
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node .claude/scripts/suggest-compact.js --milestone 2>/dev/null || true"
         }
       ]
     }
